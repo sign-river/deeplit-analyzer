@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     """应用配置"""
     
     # 应用基础配置
-    app_name: str = "ScholarMind AI"
+    app_name: str = "deeplit-analyzer"
     app_version: str = "1.0.0"
     debug: bool = True
     log_level: str = "INFO"

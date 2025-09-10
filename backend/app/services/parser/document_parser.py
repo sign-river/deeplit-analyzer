@@ -4,7 +4,7 @@
 """
 import os
 import fitz  # PyMuPDF
-from docx import Document
+from docx import Document as DocxDocument
 from bs4 import BeautifulSoup
 import pytesseract
 from PIL import Image
@@ -144,7 +144,7 @@ class DocumentParser:
     async def _parse_word(self, document: Document) -> Document:
         """解析Word文档"""
         try:
-            doc = Document(document.file_path)
+            doc = DocxDocument(document.file_path)
             
             # 提取段落
             paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
@@ -379,6 +379,7 @@ class DocumentParser:
                 ref = Reference(
                     id=f"ref_{i}",
                     title=line[:200],  # 截取前200字符作为标题
+                    authors=[],
                     raw_text=line
                 )
                 references.append(ref)

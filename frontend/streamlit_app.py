@@ -1,5 +1,5 @@
 """
-ScholarMind AI 前端界面
+deeplit-analyzer 前端界面
 使用Streamlit构建用户界面
 """
 import streamlit as st
@@ -10,7 +10,7 @@ import time
 
 # 页面配置
 st.set_page_config(
-    page_title="ScholarMind AI",
+    page_title="deeplit-analyzer",
     page_icon="📚",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -90,8 +90,8 @@ def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = 
 def main():
     """主函数"""
     # 标题
-    st.markdown('<h1 class="main-header">📚 ScholarMind AI</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">学术文献智能处理系统</p>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">📚 deeplit-analyzer</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">deeplit-analyzer 学术文献智能处理系统</p>', unsafe_allow_html=True)
     
     # 侧边栏
     with st.sidebar:
@@ -290,8 +290,12 @@ def view_document_details(doc_id: str):
         if result.get('sections'):
             st.markdown("#### 章节信息")
             for section in result['sections']:
-                with st.expander(f"📑 {section['title']}"):
-                    st.write(section['content'][:300] + "..." if len(section['content']) > 300 else section['content'])
+                st.markdown(f"**📑 {section['title']}**")
+                content = section['content']
+                if len(content) > 300:
+                    st.write(content[:300] + "...")
+                else:
+                    st.write(content)
         
         # 处理错误
         if result.get('processing_errors'):

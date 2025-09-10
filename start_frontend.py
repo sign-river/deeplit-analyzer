@@ -7,7 +7,7 @@ import sys
 import os
 
 if __name__ == "__main__":
-    print("🚀 启动 ScholarMind AI 前端服务...")
+    print("🚀 启动 deeplit-analyzer 前端服务...")
     print("📚 学术文献处理AI系统 - 用户界面")
     print("=" * 50)
     

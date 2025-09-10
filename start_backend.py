@@ -10,7 +10,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 if __name__ == "__main__":
-    print("🚀 启动 ScholarMind AI 后端服务...")
+    print("🚀 启动 deeplit-analyzer 后端服务...")
     print("📚 学术文献处理AI系统")
     print("=" * 50)
     

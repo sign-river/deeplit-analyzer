@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-简化版 ScholarMind AI 应用
+简化版 deeplit-analyzer 应用
 使用已安装的依赖运行基本功能
 """
 import os
@@ -36,7 +36,7 @@ class DocumentInfo:
         self.status = "uploaded"
 
 class SimpleScholarMind:
-    """简化版ScholarMind AI"""
+    """简化版 deeplit-analyzer"""
     
     def __init__(self):
         self.documents = {}
@@ -111,12 +111,12 @@ def create_fastapi_app():
     if not FASTAPI_AVAILABLE:
         return None
     
-    app = FastAPI(title="ScholarMind AI - 简化版")
+    app = FastAPI(title="deeplit-analyzer - 简化版")
     scholar_mind = SimpleScholarMind()
     
     @app.get("/")
     async def root():
-        return {"message": "ScholarMind AI - 简化版", "status": "running"}
+        return {"message": "deeplit-analyzer - 简化版", "status": "running"}
     
     @app.get("/health")
     async def health():
@@ -165,12 +165,12 @@ def create_streamlit_app():
         return None
     
     st.set_page_config(
-        page_title="ScholarMind AI - 简化版",
+        page_title="deeplit-analyzer - 简化版",
         page_icon="📚",
         layout="wide"
     )
     
-    st.title("📚 ScholarMind AI - 简化版")
+    st.title("📚 deeplit-analyzer - 简化版")
     st.markdown("学术文献处理AI系统（简化版）")
     
     scholar_mind = SimpleScholarMind()
@@ -220,7 +220,7 @@ def create_streamlit_app():
     # 使用说明
     st.header("📖 使用说明")
     st.markdown("""
-    这是一个简化版的ScholarMind AI系统，包含以下功能：
+    这是一个简化版的deeplit-analyzer系统，包含以下功能：
     
     1. **文档上传**: 输入文件名和内容
     2. **文档管理**: 查看已上传的文档
@@ -232,7 +232,7 @@ def create_streamlit_app():
 
 def main():
     """主函数"""
-    print("🚀 ScholarMind AI - 简化版")
+    print("🚀 deeplit-analyzer - 简化版")
     print("=" * 50)
     
     if FASTAPI_AVAILABLE and STREAMLIT_AVAILABLE:

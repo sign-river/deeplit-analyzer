@@ -1,5 +1,5 @@
 """
-ScholarMind AI 主应用
+deeplit-analyzer 主应用
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,7 +12,7 @@ from .api import documents, qa, summaries
 # 创建FastAPI应用
 app = FastAPI(
     title=settings.app_name,
-    description="学术文献处理AI系统 - 支持文献解析、知识点提取、智能总结和问答",
+    description="deeplit-analyzer - 学术文献处理AI系统",
     version=settings.app_version,
     docs_url="/docs",
     redoc_url="/redoc"
@@ -37,7 +37,7 @@ app.include_router(summaries.router)
 async def root():
     """根路径"""
     return {
-        "message": "欢迎使用 ScholarMind AI",
+        "message": "欢迎使用 deeplit-analyzer",
         "version": settings.app_version,
         "docs": "/docs",
         "status": "running"
