@@ -219,35 +219,44 @@ def document_management_tab():
     # 获取文档列表
     result = make_api_request("/documents/")
     
-    if result:
-        documents = result
-        if documents:
-            st.markdown(f"共找到 {len(documents)} 个文档")
-            
-            for doc in documents:
-                with st.expander(f"📄 {doc['filename']} - {doc['status']}"):
-                    col1, col2, col3 = st.columns([2, 1, 1])
-                    
-                    with col1:
-                        st.write(f"**ID**: {doc['id']}")
-                        st.write(f"**状态**: {doc['status']}")
-                        st.write(f"**上传时间**: {doc['created_at']}")
-                        if doc.get('page_count'):
-                            st.write(f"**页数**: {doc['page_count']}")
-                        if doc.get('word_count'):
-                            st.write(f"**字数**: {doc['word_count']}")
-                    
-                    with col2:
-                        if st.button(f"📊 查看详情", key=f"detail_{doc['id']}"):
-                            view_document_details(doc['id'])
-                    
-                    with col3:
-                        if st.button(f"🗑️ 删除", key=f"delete_{doc['id']}"):
-                            delete_document(doc['id'])
-        else:
-            st.info("📭 暂无文档")
-    else:
+    if result is None:
         st.error("❌ 获取文档列表失败")
+        return
+    
+    documents = result if isinstance(result, list) else []
+    if not documents:
+        st.info("📭 文件列表为空")
+        return
+    
+    st.markdown(f"共找到 {len(documents)} 个文档")
+    
+    for doc in documents:
+        with st.expander(f"📄 {doc['filename']} - {doc['status']}"):
+            col1, col2, col3 = st.columns([2, 1, 1])
+            
+            with col1:
+                st.write(f"**ID**: {doc['id']}")
+                st.write(f"**状态**: {doc['status']}")
+                st.write(f"**上传时间**: {doc['created_at']}")
+                if doc.get('page_count'):
+                    st.write(f"**页数**: {doc['page_count']}")
+                if doc.get('word_count'):
+                    st.write(f"**字数**: {doc['word_count']}")
+            
+            with col2:
+                if st.button(f"📊 查看详情", key=f"detail_{doc['id']}"):
+                    st.session_state['detail_doc_id'] = doc['id']
+                    st.session_state['detail_open'] = True
+                    st.experimental_rerun()
+            
+            with col3:
+                if st.button(f"🗑️ 删除", key=f"delete_{doc['id']}"):
+                    delete_document(doc['id'])
+
+    # 在列表下方以全宽区域展示详情，避免被放入窄列
+    if st.session_state.get('detail_open') and st.session_state.get('detail_doc_id'):
+        st.markdown("---")
+        view_document_details(st.session_state['detail_doc_id'])
 
 def view_document_details(doc_id: str):
     """查看文档详情"""
@@ -272,30 +281,24 @@ def view_document_details(doc_id: str):
             if result.get('word_count'):
                 st.write(f"**字数**: {result['word_count']}")
         
-        # 元数据
+        # 元数据（仅展示标题）
         if result.get('metadata'):
             st.markdown("#### 元数据")
             metadata = result['metadata']
-            
             if metadata.get('title'):
                 st.write(f"**标题**: {metadata['title']}")
-            if metadata.get('authors'):
-                st.write(f"**作者**: {', '.join(metadata['authors'])}")
-            if metadata.get('abstract'):
-                st.write(f"**摘要**: {metadata['abstract'][:200]}...")
-            if metadata.get('keywords'):
-                st.write(f"**关键词**: {', '.join(metadata['keywords'])}")
         
-        # 章节信息
+        # 章节信息（仅展示内容前150字的预览，不显示全文）
         if result.get('sections'):
             st.markdown("#### 章节信息")
-            for section in result['sections']:
-                st.markdown(f"**📑 {section['title']}**")
-                content = section['content']
-                if len(content) > 300:
-                    st.write(content[:300] + "...")
-                else:
-                    st.write(content)
+            sections = result['sections']
+            max_sections = min(5, len(sections))
+            for section in sections[:max_sections]:
+                title = section.get('title', '未命名章节')
+                content = section.get('content', '')
+                preview = content[:150] + ("..." if len(content) > 150 else "")
+                st.markdown(f"**📑 {title}**")
+                st.write(preview)
         
         # 处理错误
         if result.get('processing_errors'):

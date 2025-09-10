@@ -82,6 +82,47 @@ async def ask_question(request: QuestionRequest):
         raise HTTPException(status_code=500, detail=f"处理问题失败: {str(e)}")
 
 
+@router.get("/search")
+async def search_document(
+    document_id: str = Query(..., description="文档ID"),
+    q: str = Query(..., description="搜索关键词")
+):
+    """
+    文档内检索（返回相关片段）
+    """
+    try:
+        # 获取文档
+        document = await storage.get_document(document_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        
+        # 状态校验
+        if document.status.value not in ["parsed", "extracted", "completed"]:
+            raise HTTPException(
+                status_code=400,
+                detail="文档尚未处理完成，请稍后再试"
+            )
+        
+        # 使用QA检索逻辑获取相关片段
+        relevant_sections = await qa_service._retrieve_relevant_sections(document, q)
+        
+        results = []
+        for item in relevant_sections:
+            section = item["section"]
+            results.append({
+                "section_id": section.id,
+                "title": section.title,
+                "text": item["text"],
+                "score": float(item["score"]),
+            })
+        
+        return {"document_id": document_id, "query": q, "results": results}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"检索失败: {str(e)}")
+
+
 @router.get("/suggestions/{document_id}")
 async def get_question_suggestions(
     document_id: str,

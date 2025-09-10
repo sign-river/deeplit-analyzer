@@ -5,6 +5,8 @@
 import aiohttp
 import json
 from typing import List, Dict, Optional, Tuple
+import re
+from rapidfuzz import fuzz
 from datetime import datetime
 
 from ...models.document import Document
@@ -97,32 +99,59 @@ class QAService:
             return QuestionType.FACTUAL
     
     async def _retrieve_relevant_sections(self, document: Document, question: str) -> List[Dict]:
-        """检索相关文档片段"""
-        relevant_sections = []
-        
-        # 简单的关键词匹配检索
-        question_keywords = self._extract_keywords(question)
-        
-        for section in document.sections:
-            section_text = section.content.lower()
-            relevance_score = 0
-            
-            # 计算相关性分数
-            for keyword in question_keywords:
-                if keyword in section_text:
-                    relevance_score += section_text.count(keyword)
-            
-            if relevance_score > 0:
-                relevant_sections.append({
+        """检索相关文档片段（关键词 + 模糊匹配 + 分片召回）"""
+        candidates: List[Dict] = []
+        question_lower = question.lower()
+        question_keywords = self._extract_keywords(question_lower)
+
+        def clean_text(t: str) -> str:
+            # 去除多余空白和Markdown样式/引号
+            t = re.sub(r"\s+", " ", t)
+            t = re.sub(r'[#*_`">]', "", t)
+            return t.strip()
+
+        # 将章节切分为片段，提升召回
+        chunk_size = 600
+        max_section_considered = 50
+
+        for section in document.sections[:max_section_considered]:
+            text = clean_text(section.content)
+            if not text:
+                continue
+
+            # 分片
+            for start in range(0, len(text), chunk_size):
+                chunk = text[start:start + chunk_size]
+                if not chunk:
+                    continue
+
+                chunk_lower = chunk.lower()
+                # 关键词命中分
+                keyword_hits = sum(chunk_lower.count(kw) for kw in question_keywords)
+                # 模糊匹配分
+                fuzzy_score = fuzz.partial_ratio(chunk_lower, question_lower)
+                score = keyword_hits * 10 + fuzzy_score  # 关键词更高权重
+
+                candidates.append({
                     "section": section,
-                    "score": relevance_score,
-                    "text": section.content[:500]  # 限制长度
+                    "score": score,
+                    "text": chunk
                 })
-        
-        # 按相关性排序
-        relevant_sections.sort(key=lambda x: x["score"], reverse=True)
-        
-        return relevant_sections[:5]  # 返回最相关的5个片段
+
+        # 如果没有候选，退化为取最长的前几个章节片段
+        if not candidates:
+            fallback_sections = sorted(document.sections, key=lambda s: len(s.content), reverse=True)[:5]
+            for s in fallback_sections:
+                txt = clean_text(s.content)
+                candidates.append({
+                    "section": s,
+                    "score": 0,
+                    "text": txt[:chunk_size]
+                })
+
+        # 排序取Top-K
+        candidates.sort(key=lambda x: x["score"], reverse=True)
+        return candidates[:5]
     
     def _build_context(self, document: Document, relevant_sections: List[Dict], knowledge: Optional[KnowledgeExtraction]) -> str:
         """构建上下文"""
@@ -132,7 +161,7 @@ class QAService:
         if document.metadata:
             context_parts.append(f"文档标题：{document.metadata.title}")
             if document.metadata.abstract:
-                context_parts.append(f"摘要：{document.metadata.abstract[:300]}")
+                context_parts.append(f"摘要：{document.metadata.abstract[:500]}")
         
         # 添加相关章节
         for section_info in relevant_sections:
@@ -189,7 +218,7 @@ class QAService:
                 "model": self.model,
                 "messages": messages,
                 "temperature": 0.3,
-                "max_tokens": 1000,
+                "max_tokens": 1500,
                 "stream": False
             }
             
@@ -202,7 +231,7 @@ class QAService:
                 f"{self.base_url}/chat/completions",
                 json=payload,
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=30)
+                timeout=aiohttp.ClientTimeout(total=60)
             ) as response:
                 if response.status == 200:
                     result = await response.json()

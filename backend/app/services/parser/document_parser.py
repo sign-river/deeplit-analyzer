@@ -101,7 +101,7 @@ class DocumentParser:
         document.figures = figures
         document.references = references
         document.page_count = len(doc)
-        document.word_count = len(full_text.split())
+        document.word_count = self._compute_word_count(full_text)
         
         doc.close()
         return document
@@ -136,7 +136,7 @@ class DocumentParser:
         document.figures = figures
         document.references = references
         document.page_count = len(doc)
-        document.word_count = len(full_text.split())
+        document.word_count = self._compute_word_count(full_text)
         
         doc.close()
         return document
@@ -162,7 +162,7 @@ class DocumentParser:
             document.metadata = metadata
             document.sections = sections
             document.references = references
-            document.word_count = len(full_text.split())
+            document.word_count = self._compute_word_count(full_text)
             
             return document
             
@@ -191,7 +191,7 @@ class DocumentParser:
             document.metadata = metadata
             document.sections = sections
             document.references = references
-            document.word_count = len(full_text.split())
+            document.word_count = self._compute_word_count(full_text)
             
             return document
             
@@ -222,7 +222,7 @@ class DocumentParser:
             document.metadata = metadata
             document.sections = sections
             document.references = references
-            document.word_count = len(full_text.split())
+            document.word_count = self._compute_word_count(full_text)
             
             return document
             
@@ -248,7 +248,7 @@ class DocumentParser:
             document.metadata = metadata
             document.sections = sections
             document.references = references
-            document.word_count = len(full_text.split())
+            document.word_count = self._compute_word_count(full_text)
             
             return document
             
@@ -324,6 +324,19 @@ class DocumentParser:
             sections.append(section)
         
         return sections
+
+    def _compute_word_count(self, text: str) -> int:
+        """计算字数：
+        - 对中文等CJK字符按非空白字符计数
+        - 对以空格分隔的语言按单词计数
+        """
+        # 如果包含大量中文字符，采用非空白字符计数更符合直觉
+        cjk_chars = re.findall(r"[\u4e00-\u9fff]", text)
+        if len(cjk_chars) >= 20:
+            # 统计非空白字符数量
+            return len(re.findall(r"\S", text))
+        # 否则按单词切分
+        return len([w for w in re.split(r"\s+", text.strip()) if w])
     
     def _extract_metadata(self, text: str, pdf_metadata: Dict) -> DocumentMetadata:
         """提取文档元数据"""

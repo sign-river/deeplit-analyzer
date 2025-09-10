@@ -75,7 +75,7 @@ class SummarizerService:
                 "title": document.metadata.title if document.metadata else "未知标题",
                 "authors": [author.name for author in document.metadata.authors] if document.metadata else [],
                 "journal": document.metadata.journal if document.metadata else None,
-                "word_count": len(summary.split()),
+                "word_count": document.word_count,
                 "generated_at": datetime.now().isoformat()
             }
         }
@@ -84,13 +84,15 @@ class SummarizerService:
         """生成章节聚焦总结"""
         summaries = {}
         
-        # 为每个主要章节生成总结
-        main_sections = ["摘要", "引言", "方法", "结果", "讨论", "结论"]
-        
-        for section in document.sections:
-            if any(keyword in section.title for keyword in main_sections):
+        # 为章节生成总结：不再仅限于主要章节，默认处理前20个章节，避免前端标题匹配不到导致404
+        max_sections = 20
+        for section in document.sections[:max_sections]:
+            try:
                 section_summary = await self._summarize_single_section(section, knowledge)
                 summaries[section.title] = section_summary
+            except Exception:
+                # 单章失败不影响整体
+                summaries[section.title] = "该章节总结生成失败。"
         
         return {
             "type": "section_summary",
