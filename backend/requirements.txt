@@ -1,0 +1,33 @@
+# 核心框架 - 兼容Python 3.13
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.5.0
+
+# 文档解析
+pymupdf>=1.23.0
+python-docx>=1.1.0
+pillow>=10.0.0
+pytesseract>=0.3.10
+
+# 网络请求和解析
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+
+# 机器学习和向量检索
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.0
+numpy>=1.24.0
+
+# 文本处理
+rapidfuzz>=3.5.0
+
+# 配置管理
+python-dotenv>=1.0.0
+
+# 重试机制
+tenacity>=8.2.0
+
+# 可选：如果需要更好的PDF处理
+# pdfplumber>=0.10.0
+# pypdf>=3.0.0
