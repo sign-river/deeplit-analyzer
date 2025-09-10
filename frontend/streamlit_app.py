@@ -58,7 +58,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # API配置
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = "http://127.0.0.1:8000"
 
 def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = None, files: Optional[Dict] = None):
     """发送API请求"""
