@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deeplit-analyzer"
+version = "0.1.0"
+description = "A literature analysis tool based on DeepSeek API for efficient academic paper reading"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "DeepLit Team", email = "team@deeplit.com"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Text Processing :: Linguistic",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "requests>=2.25.0",
+    "click>=8.0.0",
+    "rich>=10.0.0",
+    "pydantic>=1.8.0",
+    "python-dotenv>=0.19.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0.0",
+    "pytest-cov>=2.12.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+    "mypy>=0.910",
+]
+
+[project.urls]
+Homepage = "https://github.com/sign-river/deeplit-analyzer"
+Repository = "https://github.com/sign-river/deeplit-analyzer"
+Issues = "https://github.com/sign-river/deeplit-analyzer/issues"
+
+[project.scripts]
+deeplit = "deeplit_analyzer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 88
+target-version = ["py38", "py39", "py310", "py311"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
