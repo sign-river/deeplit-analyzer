@@ -32,7 +32,7 @@ async def upload_documents(
     """
     if len(files) > settings.max_batch_size:
         raise HTTPException(
-            status_code=400, 
+            400,
             f"批量上传文件数量不能超过 {settings.max_batch_size} 个"
         )
     
@@ -42,7 +42,7 @@ async def upload_documents(
         # 验证文件类型
         if not _is_supported_file_type(file.filename):
             raise HTTPException(
-                status_code=400,
+                400,
                 f"不支持的文件类型: {file.filename}"
             )
         
