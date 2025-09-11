@@ -4,6 +4,8 @@
 from fastapi import APIRouter, HTTPException, Query, Body
 from typing import List, Optional, Dict
 from pydantic import BaseModel
+from collections import defaultdict, deque
+import time
 
 from ..models.qa import QAResponse, QuestionType
 from ..services.qa.qa_service import QAService
@@ -14,6 +16,59 @@ router = APIRouter(prefix="/qa", tags=["qa"])
 # 初始化服务
 qa_service = QAService()
 storage = DocumentStorage()
+
+# 对话历史管理器（内存存储，生产环境可考虑使用Redis）
+class ConversationManager:
+    def __init__(self, max_history_per_doc=10, max_age_hours=24):
+        self.conversations = defaultdict(lambda: deque(maxlen=max_history_per_doc))
+        self.last_access = defaultdict(float)
+        self.max_age_hours = max_age_hours
+    
+    def add_conversation(self, document_id: str, question: str, answer: str):
+        """添加对话记录"""
+        current_time = time.time()
+        self.conversations[document_id].append({
+            "question": question,
+            "answer": answer,
+            "timestamp": current_time
+        })
+        self.last_access[document_id] = current_time
+        self._cleanup_old_conversations()
+    
+    def get_conversation_history(self, document_id: str) -> List[Dict]:
+        """获取对话历史"""
+        self._cleanup_old_conversations()
+        current_time = time.time()
+        self.last_access[document_id] = current_time
+        
+        # 返回历史记录，按时间顺序
+        history = list(self.conversations[document_id])
+        return history
+    
+    def clear_conversation(self, document_id: str):
+        """清空特定文档的对话历史"""
+        if document_id in self.conversations:
+            self.conversations[document_id].clear()
+        if document_id in self.last_access:
+            del self.last_access[document_id]
+    
+    def _cleanup_old_conversations(self):
+        """清理过期的对话历史"""
+        current_time = time.time()
+        max_age_seconds = self.max_age_hours * 3600
+        
+        expired_docs = []
+        for doc_id, last_time in self.last_access.items():
+            if current_time - last_time > max_age_seconds:
+                expired_docs.append(doc_id)
+        
+        for doc_id in expired_docs:
+            if doc_id in self.conversations:
+                del self.conversations[doc_id]
+            del self.last_access[doc_id]
+
+# 全局对话管理器实例
+conversation_manager = ConversationManager()
 
 
 class QuestionRequest(BaseModel):
@@ -52,13 +107,23 @@ async def ask_question(request: QuestionRequest):
                 detail="文档尚未处理完成，请稍后再试"
             )
         
-        # TODO: 从存储中获取知识点
+        # 获取对话历史（如果前端没传递，则从后端管理器获取）
+        conversation_history = request.conversation_history
+        if conversation_history is None:
+            conversation_history = conversation_manager.get_conversation_history(request.document_id)
         
         # 回答问题
         qa_response = await qa_service.answer_question(
             document=document,
             question=request.question,
-            conversation_history=request.conversation_history
+            conversation_history=conversation_history
+        )
+        
+        # 将当前对话添加到历史记录中
+        conversation_manager.add_conversation(
+            document_id=request.document_id,
+            question=request.question,
+            answer=qa_response.answer
         )
         
         return QuestionResponse(
@@ -75,6 +140,55 @@ async def ask_question(request: QuestionRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"处理问题失败: {str(e)}")
+
+
+@router.get("/conversation/{document_id}")
+async def get_conversation_history(document_id: str):
+    """
+    获取文档的对话历史
+    """
+    try:
+        # 检查文档是否存在
+        document = await storage.get_document(document_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        
+        history = conversation_manager.get_conversation_history(document_id)
+        
+        return {
+            "document_id": document_id,
+            "conversation_history": history,
+            "total_conversations": len(history)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取对话历史失败: {str(e)}")
+
+
+@router.delete("/conversation/{document_id}")
+async def clear_conversation_history(document_id: str):
+    """
+    清空文档的对话历史
+    """
+    try:
+        # 检查文档是否存在
+        document = await storage.get_document(document_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        
+        conversation_manager.clear_conversation(document_id)
+        
+        return {
+            "message": "对话历史已清空",
+            "document_id": document_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"清空对话历史失败: {str(e)}")
 
 
 @router.get("/search")
