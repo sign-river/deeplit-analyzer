@@ -555,6 +555,7 @@ def qa_tab():
     if clear:
         st.session_state.qa_question = ""
         st.toast("已清空问题", icon="🧹")
+        st.rerun()  # 强制页面重新运行以刷新text_area显示
 
     if submit:
         if not question.strip():
