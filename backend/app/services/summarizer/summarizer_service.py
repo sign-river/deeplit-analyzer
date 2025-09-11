@@ -6,7 +6,6 @@ from typing import List, Dict, Optional
 from datetime import datetime
 
 from ...models.document import Document
-from ...models.knowledge import KnowledgeExtraction
 from ...core.config import settings
 
 
@@ -21,7 +20,6 @@ class SummarizerService:
     async def summarize_document(
         self, 
         document: Document, 
-        knowledge: Optional[KnowledgeExtraction] = None,
         summary_type: str = "full"
     ) -> Dict:
         """
@@ -29,11 +27,11 @@ class SummarizerService:
         """
         try:
             if summary_type == "full":
-                return await self._generate_full_summary(document, knowledge)
+                return await self._generate_full_summary(document)
             elif summary_type == "section":
-                return await self._generate_section_summary(document, knowledge)
+                return await self._generate_section_summary(document)
             elif summary_type == "custom":
-                return await self._generate_custom_summary(document, knowledge)
+                return await self._generate_custom_summary(document)
             else:
                 raise ValueError(f"不支持的总结类型: {summary_type}")
                 
@@ -44,10 +42,10 @@ class SummarizerService:
                 "metadata": {}
             }
     
-    async def _generate_full_summary(self, document: Document, knowledge: Optional[KnowledgeExtraction]) -> Dict:
+    async def _generate_full_summary(self, document: Document) -> Dict:
         """生成全文献概括总结"""
         # 构建文档内容
-        content = self._build_document_content(document, knowledge)
+        content = self._build_document_content(document)
         
         # 生成总结提示
         prompt = f"""
@@ -80,7 +78,7 @@ class SummarizerService:
             }
         }
     
-    async def _generate_section_summary(self, document: Document, knowledge: Optional[KnowledgeExtraction]) -> Dict:
+    async def _generate_section_summary(self, document: Document) -> Dict:
         """生成章节聚焦总结"""
         summaries = {}
         
@@ -88,7 +86,7 @@ class SummarizerService:
         max_sections = 20
         for section in document.sections[:max_sections]:
             try:
-                section_summary = await self._summarize_single_section(section, knowledge)
+                section_summary = await self._summarize_single_section(section)
                 summaries[section.title] = section_summary
             except Exception:
                 # 单章失败不影响整体
@@ -104,12 +102,12 @@ class SummarizerService:
             }
         }
     
-    async def _generate_custom_summary(self, document: Document, knowledge: Optional[KnowledgeExtraction]) -> Dict:
+    async def _generate_custom_summary(self, document: Document) -> Dict:
         """生成定制化总结"""
         # 这里可以根据用户需求生成不同类型的总结
         # 例如：仅总结研究局限与未来方向、按特定结构总结等
         
-        content = self._build_document_content(document, knowledge)
+        content = self._build_document_content(document)
         
         prompt = f"""
 请为以下学术文献生成定制化总结，重点关注：
@@ -137,7 +135,7 @@ class SummarizerService:
             }
         }
     
-    async def _summarize_single_section(self, section, knowledge: Optional[KnowledgeExtraction]) -> str:
+    async def _summarize_single_section(self, section) -> str:
         """总结单个章节"""
         # 构建章节内容
         section_content = f"章节标题：{section.title}\n内容：{section.content[:1000]}"
@@ -179,7 +177,7 @@ class SummarizerService:
         
         return await self._call_deepseek_api(prompt)
     
-    def _build_document_content(self, document: Document, knowledge: Optional[KnowledgeExtraction]) -> str:
+    def _build_document_content(self, document: Document) -> str:
         """构建文档内容"""
         content_parts = []
         
@@ -194,20 +192,6 @@ class SummarizerService:
         # 添加章节内容
         for section in document.sections:
             content_parts.append(f"\n{section.title}：\n{section.content[:500]}")
-        
-        # 添加知识点信息
-        if knowledge:
-            if knowledge.core_points:
-                points_text = "\n".join([f"- {point.content}" for point in knowledge.core_points[:5]])
-                content_parts.append(f"\n核心观点：\n{points_text}")
-            
-            if knowledge.methods:
-                methods_text = "\n".join([f"- {method.method_type}" for method in knowledge.methods[:3]])
-                content_parts.append(f"\n研究方法：\n{methods_text}")
-            
-            if knowledge.results:
-                results_text = "\n".join([f"- {result.metric_name}: {result.value}" for result in knowledge.results[:5]])
-                content_parts.append(f"\n实验结果：\n{results_text}")
         
         return "\n".join(content_parts)
     
@@ -270,10 +254,9 @@ class SummarizerService:
         self, 
         document: Document, 
         keywords: List[str],
-        knowledge: Optional[KnowledgeExtraction] = None
     ) -> Dict:
         """根据关键词生成总结"""
-        content = self._build_document_content(document, knowledge)
+        content = self._build_document_content(document)
         
         keywords_text = "、".join(keywords)
         prompt = f"""
@@ -307,10 +290,9 @@ class SummarizerService:
         self, 
         document: Document, 
         template: str,
-        knowledge: Optional[KnowledgeExtraction] = None
     ) -> Dict:
         """根据模板生成总结"""
-        content = self._build_document_content(document, knowledge)
+        content = self._build_document_content(document)
         
         prompt = f"""
 请按照"{template}"模板为以下文献生成总结：

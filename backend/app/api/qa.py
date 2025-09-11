@@ -8,14 +8,12 @@ from pydantic import BaseModel
 from ..models.qa import QAResponse, QuestionType
 from ..services.qa.qa_service import QAService
 from ..services.storage.document_storage import DocumentStorage
-from ..services.extractor.knowledge_extractor import KnowledgeExtractor
 
 router = APIRouter(prefix="/qa", tags=["qa"])
 
 # 初始化服务
 qa_service = QAService()
 storage = DocumentStorage()
-knowledge_extractor = KnowledgeExtractor()
 
 
 class QuestionRequest(BaseModel):
@@ -54,15 +52,12 @@ async def ask_question(request: QuestionRequest):
                 detail="文档尚未处理完成，请稍后再试"
             )
         
-        # 获取知识点（如果存在）
-        knowledge = None
         # TODO: 从存储中获取知识点
         
         # 回答问题
         qa_response = await qa_service.answer_question(
             document=document,
             question=request.question,
-            knowledge=knowledge,
             conversation_history=request.conversation_history
         )
         

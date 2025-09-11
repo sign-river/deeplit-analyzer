@@ -7,14 +7,12 @@ from pydantic import BaseModel
 
 from ..services.summarizer.summarizer_service import SummarizerService
 from ..services.storage.document_storage import DocumentStorage
-from ..services.extractor.knowledge_extractor import KnowledgeExtractor
 
 router = APIRouter(prefix="/summaries", tags=["summaries"])
 
 # 初始化服务
 summarizer = SummarizerService()
 storage = DocumentStorage()
-knowledge_extractor = KnowledgeExtractor()
 
 
 class SummaryRequest(BaseModel):
@@ -43,21 +41,15 @@ async def generate_summary(request: SummaryRequest):
                 detail="文档尚未处理完成，请稍后再试"
             )
         
-        # 获取知识点（如果存在）
-        knowledge = None
-        # TODO: 从存储中获取知识点
-        
         # 生成总结
         if request.summary_type == "full":
             result = await summarizer.summarize_document(
                 document=document,
-                knowledge=knowledge,
                 summary_type="full"
             )
         elif request.summary_type == "section":
             result = await summarizer.summarize_document(
                 document=document,
-                knowledge=knowledge,
                 summary_type="section"
             )
         elif request.summary_type == "custom":
@@ -65,18 +57,15 @@ async def generate_summary(request: SummaryRequest):
                 result = await summarizer.generate_summary_by_keywords(
                     document=document,
                     keywords=request.keywords,
-                    knowledge=knowledge
                 )
             elif request.template:
                 result = await summarizer.generate_summary_by_template(
                     document=document,
                     template=request.template,
-                    knowledge=knowledge
                 )
             else:
                 result = await summarizer.summarize_document(
                     document=document,
-                    knowledge=knowledge,
                     summary_type="custom"
                 )
         else:

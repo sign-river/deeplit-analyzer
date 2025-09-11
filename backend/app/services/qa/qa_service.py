@@ -8,10 +8,8 @@ from typing import List, Dict, Optional, Tuple
 import re
 from rapidfuzz import fuzz
 from datetime import datetime
-
 from ...models.document import Document
 from ...models.qa import Question, Answer, QAResponse, QuestionType, AnswerSource
-from ...models.knowledge import KnowledgeExtraction
 from ...core.config import settings
 
 
@@ -27,7 +25,6 @@ class QAService:
         self, 
         document: Document, 
         question: str, 
-        knowledge: Optional[KnowledgeExtraction] = None,
         conversation_history: Optional[List[Dict]] = None
     ) -> QAResponse:
         """
@@ -43,7 +40,7 @@ class QAService:
             relevant_sections = await self._retrieve_relevant_sections(document, question)
             
             # 3. 构建上下文
-            context = self._build_context(document, relevant_sections, knowledge)
+            context = self._build_context(document, relevant_sections)
             
             # 4. 调用DeepSeek API
             answer_text = await self._call_deepseek_api(question, context, conversation_history)
@@ -153,7 +150,7 @@ class QAService:
         candidates.sort(key=lambda x: x["score"], reverse=True)
         return candidates[:5]
     
-    def _build_context(self, document: Document, relevant_sections: List[Dict], knowledge: Optional[KnowledgeExtraction]) -> str:
+    def _build_context(self, document: Document, relevant_sections: List[Dict]) -> str:
         """构建上下文"""
         context_parts = []
         
@@ -167,16 +164,6 @@ class QAService:
         for section_info in relevant_sections:
             section = section_info["section"]
             context_parts.append(f"章节：{section.title}\n内容：{section_info['text']}")
-        
-        # 添加知识点信息
-        if knowledge:
-            if knowledge.core_points:
-                points_text = "\n".join([f"- {point.content}" for point in knowledge.core_points[:3]])
-                context_parts.append(f"核心观点：\n{points_text}")
-            
-            if knowledge.methods:
-                methods_text = "\n".join([f"- {method.method_type}: {', '.join(method.core_steps[:2])}" for method in knowledge.methods[:2]])
-                context_parts.append(f"研究方法：\n{methods_text}")
         
         return "\n\n".join(context_parts)
     
