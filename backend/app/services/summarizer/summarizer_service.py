@@ -135,6 +135,10 @@ class SummarizerService:
             }
         }
     
+    async def summarize_single_section(self, section) -> str:
+        """为单个章节生成总结（公共方法）"""
+        return await self._summarize_single_section(section)
+
     async def _summarize_single_section(self, section) -> str:
         """总结单个章节"""
         # 构建章节内容

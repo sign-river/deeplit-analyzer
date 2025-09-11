@@ -4,6 +4,7 @@
 from fastapi import APIRouter, HTTPException, Query, Body
 from typing import List, Optional, Dict
 from pydantic import BaseModel
+from datetime import datetime
 
 from ..services.summarizer.summarizer_service import SummarizerService
 from ..services.storage.document_storage import DocumentStorage
@@ -102,6 +103,55 @@ async def get_full_summary(document_id: str):
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=f"生成总结失败: {str(e)}")
+
+
+@router.post("/section/{document_id}")
+async def generate_section_summary(
+    document_id: str,
+    request: dict = Body(...)
+):
+    """
+    生成指定章节的总结
+    """
+    try:
+        # 获取文档
+        document = await storage.get_document(document_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        
+        section_name = request.get("section_name")
+        if not section_name:
+            raise HTTPException(status_code=400, detail="章节名称不能为空")
+        
+        # 查找指定章节
+        target_section = None
+        for section in document.sections:
+            if section.title == section_name:
+                target_section = section
+                break
+        
+        if not target_section:
+            raise HTTPException(status_code=404, detail=f"未找到章节: {section_name}")
+        
+        # 只为指定章节生成总结
+        section_summary = await summarizer.summarize_single_section(target_section)
+        
+        return {
+            "section_name": section_name,
+            "summary": section_summary,
+            "metadata": {
+                "document_id": document_id,
+                "generated_at": datetime.now().isoformat()
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"章节总结生成错误: {str(e)}")
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"生成总结失败: {str(e)}")
 
 

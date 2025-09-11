@@ -797,7 +797,7 @@ def summarization_tab():
                     
                     if st.button("🚀 生成章节总结", type="primary"):
                         with st.spinner("正在生成章节总结..."):
-                            result = make_api_request(f"/summaries/section/{doc_id}", 
+                            result = make_api_request(f"/summaries/section/{doc_id}", "POST",
                                                     data={"section_name": selected_section['title']})
                             
                             if result:
