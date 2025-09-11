@@ -515,22 +515,29 @@ def qa_tab():
 
     if suggestions:
         st.markdown("### 💡 问题建议")
-        # 默认选择：优先用当前文本域内容（若在建议列表里），否则用上次选择，最后回退到第一个
+        
+        # 添加占位选项，避免预选中任何建议问题
+        suggestion_options = ["请选择一个建议问题..."] + suggestions
+        
+        # 默认选择：优先用当前文本域内容（若在建议列表里），否则用上次选择，最后回退到占位项
         if st.session_state.qa_question in suggestions:
-            default_idx = suggestions.index(st.session_state.qa_question)
+            default_idx = suggestions.index(st.session_state.qa_question) + 1  # +1 因为有占位项
         elif st.session_state.qa_suggestion_selected in suggestions:
-            default_idx = suggestions.index(st.session_state.qa_suggestion_selected)
+            default_idx = suggestions.index(st.session_state.qa_suggestion_selected) + 1
         else:
-            default_idx = 0
+            default_idx = 0  # 选中占位项
 
         def _apply_suggestion():
             sel = st.session_state.qa_suggestion_select
+            # 如果选择的是占位项，不执行任何操作
+            if sel == "请选择一个建议问题...":
+                return
             st.session_state.qa_suggestion_selected = sel
             st.session_state.qa_question = sel  # 自动填充到文本域
 
         st.selectbox(
             "选择一个建议问题：",
-            options=suggestions,
+            options=suggestion_options,
             index=default_idx,
             key="qa_suggestion_select",
             on_change=_apply_suggestion,
