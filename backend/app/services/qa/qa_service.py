@@ -96,7 +96,7 @@ class QAService:
             return QuestionType.FACTUAL
     
     async def _retrieve_relevant_sections(self, document: Document, question: str) -> List[Dict]:
-        """检索相关文档片段（关键词 + 模糊匹配 + 分片召回）"""
+        """检索相关文档片段（基于段落的智能分割）"""
         candidates: List[Dict] = []
         question_lower = question.lower()
         question_keywords = self._extract_keywords(question_lower)
@@ -107,48 +107,147 @@ class QAService:
             t = re.sub(r'[#*_`">]', "", t)
             return t.strip()
 
-        # 将章节切分为片段，提升召回
-        chunk_size = 600
-        max_section_considered = 50
+        def extract_meaningful_chunks(text: str) -> List[str]:
+            """基于段落和句子结构提取有意义的文本片段"""
+            if not text or len(text) < 100:
+                return [text] if text else []
+            
+            chunks = []
+            
+            # 首先按双换行符分段落
+            paragraphs = re.split(r'\n\s*\n', text)
+            
+            current_chunk = ""
+            target_size = 1000  # 目标片段大小
+            min_size = 300     # 最小片段大小
+            
+            for paragraph in paragraphs:
+                paragraph = paragraph.strip()
+                if not paragraph:
+                    continue
+                
+                # 如果当前chunk加上这个段落仍在合理范围内
+                if len(current_chunk) + len(paragraph) <= target_size:
+                    if current_chunk:
+                        current_chunk += "\n\n" + paragraph
+                    else:
+                        current_chunk = paragraph
+                else:
+                    # 如果当前chunk已经足够大，保存它
+                    if len(current_chunk) >= min_size:
+                        chunks.append(current_chunk.strip())
+                        current_chunk = paragraph
+                    else:
+                        # 如果当前chunk太小，继续添加
+                        if current_chunk:
+                            current_chunk += "\n\n" + paragraph
+                        else:
+                            current_chunk = paragraph
+                        
+                        # 如果添加后超出目标大小很多，按句子分割
+                        if len(current_chunk) > target_size * 1.5:
+                            sentences = re.split(r'[。！？；]', current_chunk)
+                            temp_chunk = ""
+                            
+                            for sentence in sentences:
+                                sentence = sentence.strip()
+                                if not sentence:
+                                    continue
+                                
+                                if len(temp_chunk) + len(sentence) <= target_size:
+                                    if temp_chunk:
+                                        temp_chunk += "。" + sentence
+                                    else:
+                                        temp_chunk = sentence
+                                else:
+                                    if temp_chunk and len(temp_chunk) >= min_size:
+                                        chunks.append(temp_chunk.strip() + "。")
+                                    temp_chunk = sentence
+                            
+                            # 处理剩余部分
+                            if temp_chunk and len(temp_chunk) >= min_size:
+                                chunks.append(temp_chunk.strip())
+                            current_chunk = ""
+            
+            # 添加最后一个chunk
+            if current_chunk and len(current_chunk) >= min_size:
+                chunks.append(current_chunk.strip())
+            
+            return chunks
+
+        # 处理每个章节
+        max_section_considered = 30
 
         for section in document.sections[:max_section_considered]:
             text = clean_text(section.content)
             if not text:
                 continue
 
-            # 分片
-            for start in range(0, len(text), chunk_size):
-                chunk = text[start:start + chunk_size]
-                if not chunk:
+            # 提取有意义的文本片段
+            text_chunks = extract_meaningful_chunks(text)
+            
+            for chunk_text in text_chunks:
+                if not chunk_text or len(chunk_text) < 100:  # 过滤太短的片段
                     continue
 
-                chunk_lower = chunk.lower()
-                # 关键词命中分
+                chunk_lower = chunk_text.lower()
+                
+                # 计算相关性得分
                 keyword_hits = sum(chunk_lower.count(kw) for kw in question_keywords)
-                # 模糊匹配分
                 fuzzy_score = fuzz.partial_ratio(chunk_lower, question_lower)
-                score = keyword_hits * 10 + fuzzy_score  # 关键词更高权重
+                
+                # 长度合理性奖励（适中长度的片段更好）
+                length_score = 0
+                if 300 <= len(chunk_text) <= 1200:
+                    length_score = 5
+                elif 200 <= len(chunk_text) <= 1500:
+                    length_score = 3
+                
+                # 完整性奖励（以句号结尾的片段更完整）
+                completeness_score = 3 if chunk_text.endswith(('。', '！', '？')) else 0
+                
+                total_score = keyword_hits * 15 + fuzzy_score + length_score + completeness_score
 
                 candidates.append({
                     "section": section,
-                    "score": score,
-                    "text": chunk
+                    "score": total_score,
+                    "text": chunk_text
                 })
 
-        # 如果没有候选，退化为取最长的前几个章节片段
-        if not candidates:
-            fallback_sections = sorted(document.sections, key=lambda s: len(s.content), reverse=True)[:5]
+        # 如果没有找到足够的候选片段，使用章节开头的内容
+        if len(candidates) < 3:
+            fallback_sections = sorted(document.sections, key=lambda s: len(s.content), reverse=True)[:3]
             for s in fallback_sections:
-                txt = clean_text(s.content)
-                candidates.append({
-                    "section": s,
-                    "score": 0,
-                    "text": txt[:chunk_size]
-                })
+                text = clean_text(s.content)
+                if text:
+                    # 取章节开头的1000字符，并尽量在句子边界截断
+                    excerpt = text[:1000]
+                    # 找到最后一个句号位置
+                    last_period = excerpt.rfind('。')
+                    if last_period > 500:  # 如果找到合适的句号位置
+                        excerpt = excerpt[:last_period + 1]
+                    
+                    candidates.append({
+                        "section": s,
+                        "score": 1,  # 给fallback一个基础分数
+                        "text": excerpt
+                    })
 
-        # 排序取Top-K
+        # 排序并去重
         candidates.sort(key=lambda x: x["score"], reverse=True)
-        return candidates[:5]
+        
+        # 简单的去重逻辑（避免内容重复）
+        seen_texts = set()
+        unique_candidates = []
+        for candidate in candidates:
+            text_snippet = candidate["text"][:100]  # 用前100字符做去重判断
+            if text_snippet not in seen_texts:
+                seen_texts.add(text_snippet)
+                unique_candidates.append(candidate)
+                if len(unique_candidates) >= 5:  # 最多返回5个
+                    break
+        
+        return unique_candidates
     
     def _build_context(self, document: Document, relevant_sections: List[Dict]) -> str:
         """构建上下文"""
