@@ -30,13 +30,64 @@ async def upload_documents(
     上传文档文件
     支持多文件上传和批量处理
     """
-    if len(files) > settings.max_batch_size:
-        raise HTTPException(
-            400,
-            f"批量上传文件数量不能超过 {settings.max_batch_size} 个"
-        )
-    
-    uploaded_docs = []
+    try:
+        if len(files) > settings.max_batch_size:
+            raise HTTPException(
+                400,
+                f"批量上传文件数量不能超过 {settings.max_batch_size} 个"
+            )
+        
+        uploaded_docs = []
+        
+        for file in files:
+            # 验证文件类型
+            if not _is_supported_file_type(file.filename):
+                raise HTTPException(
+                    400,
+                    f"不支持的文件类型: {file.filename}"
+                )
+            
+            # 生成文档ID
+            doc_id = str(uuid.uuid4())
+            
+            # 保存文件
+            file_path = await _save_uploaded_file(file, doc_id)
+            
+            # 创建文档记录
+            document = Document(
+                id=doc_id,
+                filename=file.filename,
+                file_path=file_path,
+                file_size=file.size or 0,
+                document_type=_get_document_type(file.filename),
+                status=DocumentStatus.UPLOADED
+            )
+            
+            # 保存到存储
+            await storage.save_document(document)
+            
+            # 添加到后台处理任务
+            background_tasks.add_task(process_document, doc_id)
+            
+            uploaded_docs.append({
+                "id": doc_id,
+                "filename": file.filename,
+                "status": document.status.value
+            })
+        
+        return {
+            "message": f"成功上传 {len(files)} 个文件",
+            "documents": uploaded_docs,
+            "batch_name": batch_name
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"文档上传错误: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"文档上传失败: {str(e)}")
     
     for file in files:
         # 验证文件类型
@@ -176,11 +227,25 @@ async def delete_document(document_id: str):
     """
     删除文档
     """
-    success = await storage.delete_document(document_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="文档不存在")
-    
-    return {"message": "文档删除成功"}
+    try:
+        # 首先检查文档是否存在
+        document = await storage.get_document(document_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="文档不存在或已被删除")
+        
+        success = await storage.delete_document(document_id)
+        if not success:
+            raise HTTPException(status_code=500, detail="文档删除失败，请稍后重试")
+        
+        return {"message": "文档删除成功", "document_id": document_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"删除文档错误: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"删除文档时发生错误: {str(e)}")
 
 
 @router.post("/{document_id}/reprocess")

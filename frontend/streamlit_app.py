@@ -510,17 +510,41 @@ def document_management_tab():
     with col2:
         batch_name = st.text_input("批次名称", placeholder="可选")
     
-    if st.button("🚀 开始上传", type="primary"):
+    # 防重复上传的状态管理
+    upload_key = "uploading_files"
+    
+    # 上传按钮，添加防重复机制
+    upload_disabled = st.session_state.get(upload_key, False)
+    
+    if st.button("🚀 开始上传", type="primary", disabled=upload_disabled):
         if uploaded_files:
-            with st.spinner("正在上传文档..."):
-                files_data = []
-                for file in uploaded_files:
-                    files_data.append(("files", (file.name, file, file.type)))
+            # 防止重复上传
+            if st.session_state.get(upload_key, False):
+                st.warning("⚠️ 上传正在进行中，请勿重复点击")
+                return
+            
+            try:
+                # 设置上传状态
+                st.session_state[upload_key] = True
                 
-                if batch_name:
-                    files_data.append(("batch_name", batch_name))
-                
-                result = make_api_request("/documents/upload", "POST", files=files_data)
+                with st.spinner("正在上传文档..."):
+                    # 准备文件数据 - 支持多文件上传
+                    files_list = []
+                    data_dict = {}
+                    
+                    # 添加所有文件到files列表
+                    for file in uploaded_files:
+                        files_list.append(('files', (file.name, file, file.type)))
+                    
+                    # 添加批次名称
+                    if batch_name:
+                        data_dict["batch_name"] = batch_name
+                    
+                    # 使用更直接的方式调用API
+                    url = f"{API_BASE_URL}/documents/upload"
+                    response = requests.post(url, files=files_list, data=data_dict)
+                    response.raise_for_status()
+                    result = response.json()
                 
                 if result:
                     st.success(f"✅ 成功上传 {len(uploaded_files)} 个文件")
@@ -529,8 +553,25 @@ def document_management_tab():
                     for doc in result.get("documents", []):
                         st.info(f"📄 {doc['filename']} - ID: {doc['id']}")
                     
-                    # 刷新文档列表
+                    # 清除上传状态
+                    if upload_key in st.session_state:
+                        del st.session_state[upload_key]
+                    
+                    # 延迟一下再刷新，确保后端处理完成
+                    import time
+                    time.sleep(1)
                     st.rerun()
+                    
+            except requests.exceptions.RequestException as e:
+                st.error(f"上传失败: {str(e)}")
+                # 清除上传状态
+                if upload_key in st.session_state:
+                    del st.session_state[upload_key]
+            except Exception as e:
+                st.error(f"上传处理失败: {str(e)}")
+                # 清除上传状态
+                if upload_key in st.session_state:
+                    del st.session_state[upload_key]
         else:
             st.warning("请先选择要上传的文件")
     
@@ -605,8 +646,25 @@ def document_management_tab():
                     st.session_state['detail_open'] = True
             
             with col3:
-                if st.button(f"🗑️ 删除", key=f"delete_{doc['id']}"):
-                    delete_document(doc['id'])
+                # 添加删除确认机制
+                confirm_key = f"confirm_delete_{doc['id']}"
+                if st.session_state.get(confirm_key, False):
+                    # 显示确认对话框
+                    st.warning("⚠️ 确认要删除这个文档吗？此操作不可撤销！")
+                    col_confirm, col_cancel = st.columns(2)
+                    with col_confirm:
+                        if st.button("✅ 确认删除", key=f"confirm_del_{doc['id']}", type="primary"):
+                            st.session_state[confirm_key] = False
+                            delete_document(doc['id'])
+                    with col_cancel:
+                        if st.button("❌ 取消", key=f"cancel_del_{doc['id']}"):
+                            st.session_state[confirm_key] = False
+                            st.rerun()
+                else:
+                    # 普通删除按钮
+                    if st.button(f"🗑️ 删除", key=f"delete_{doc['id']}"):
+                        st.session_state[confirm_key] = True
+                        st.rerun()
 
     # 在列表下方以全宽区域展示详情，避免被放入窄列
     if st.session_state.get('detail_open') and st.session_state.get('detail_doc_id'):
@@ -663,13 +721,37 @@ def view_document_details(doc_id: str):
 
 def delete_document(doc_id: str):
     """删除文档"""
-    result = make_api_request(f"/documents/{doc_id}", "DELETE")
+    # 防止重复删除的状态检查
+    delete_key = f"deleting_{doc_id}"
     
-    if result:
-        st.success("✅ 文档删除成功")
-        st.rerun()
-    else:
-        st.error("❌ 文档删除失败")
+    # 如果正在删除中，直接返回
+    if st.session_state.get(delete_key, False):
+        return
+    
+    try:
+        # 设置删除状态
+        st.session_state[delete_key] = True
+        
+        with st.spinner("正在删除文档..."):
+            result = make_api_request(f"/documents/{doc_id}", "DELETE")
+        
+        if result:
+            st.success("✅ 文档删除成功")
+            # 清除删除状态
+            if delete_key in st.session_state:
+                del st.session_state[delete_key]
+            st.rerun()
+        else:
+            st.error("❌ 文档删除失败")
+            # 清除删除状态
+            if delete_key in st.session_state:
+                del st.session_state[delete_key]
+                
+    except Exception as e:
+        # 清除删除状态
+        if delete_key in st.session_state:
+            del st.session_state[delete_key]
+        st.error(f"❌ 删除失败: {str(e)}")
 
 def summarization_tab():
     """文献总结标签页"""
