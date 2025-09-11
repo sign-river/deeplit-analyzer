@@ -248,7 +248,7 @@ def document_management_tab():
                 if st.button(f"📊 查看详情", key=f"detail_{doc['id']}"):
                     st.session_state['detail_doc_id'] = doc['id']
                     st.session_state['detail_open'] = True
-                    st.experimental_rerun()
+                    st.rerun()  # 修复：使用新版API
             
             with col3:
                 if st.button(f"🗑️ 删除", key=f"delete_{doc['id']}"):
@@ -465,6 +465,8 @@ def qa_tab():
         st.session_state.qa_selected_doc_id = None
     if "qa_suggestion_selected" not in st.session_state:
         st.session_state.qa_suggestion_selected = None  # 记住上次选择的建议
+    if "qa_result" not in st.session_state:
+        st.session_state.qa_result = None  # 保存最新的QA结果
 
     # --- 获取文档列表 ---
     result = make_api_request("/documents/")
@@ -585,7 +587,12 @@ def qa_tab():
         # 成功渲染
         st.success("✅ 回答生成成功")
         st.session_state.qa_question = question  # 记录当前问题
+        st.session_state.qa_result = qa_result  # 保存结果到session_state以便持久显示
 
+    # 显示之前的QA结果（如果有的话）
+    if 'qa_result' in st.session_state and st.session_state.qa_result:
+        qa_result = st.session_state.qa_result
+        
         st.markdown("### 🤖 AI 回答")
         st.markdown(qa_result.get("answer", "_（无内容）_"))
 
@@ -621,11 +628,22 @@ def qa_tab():
         followups = qa_result.get("follow_up_suggestions") or []
         if followups:
             st.markdown("### 💡 后续可追问")
-            for s in followups:
-                key = "fu_" + md5(s.encode("utf-8")).hexdigest()[:10]
-                if st.button(s, key=key, use_container_width=True):
+            st.markdown("点击下方按钮将问题自动填入上方文本框：")
+            
+            # 添加调试信息
+            st.caption(f"当前问题内容：{st.session_state.qa_question[:50]}{'...' if len(st.session_state.qa_question) > 50 else ''}")
+            
+            for i, s in enumerate(followups):
+                # 使用更简单的key生成方式
+                key = f"followup_btn_{doc_id}_{i}_persistent"
+                button_clicked = st.button(s, key=key, use_container_width=True)
+                
+                if button_clicked:
+                    # 添加更多调试信息
+                    st.info(f"🔄 按钮被点击！正在设置问题为：{s}")
                     st.session_state.qa_question = s
-                    st.experimental_rerun()
+                    st.toast(f"✅ 已选择追问：{s[:50]}{'...' if len(s) > 50 else ''}", icon="💭")
+                    st.rerun()
 
 
 def search_tab():
