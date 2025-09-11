@@ -839,7 +839,6 @@ def summarization_tab():
             if cache_key not in st.session_state:
                 # 显示加载状态
                 with st.spinner("🔍 正在智能分析文档，提取关键词..."):
-                    st.info("💡 AI正在分析文档内容，识别重要的学术术语和概念，请稍候...")
                     keywords_result = make_api_request(f"/summaries/keywords/{doc_id}")
                     suggested_keywords = keywords_result.get('keywords', []) if keywords_result else []
                     # 缓存结果
