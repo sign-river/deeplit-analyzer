@@ -563,6 +563,7 @@ def qa_tab():
 
     if clear:
         st.session_state.qa_question = ""
+        st.session_state.qa_result = None  # 同时清空QA结果
         st.toast("已清空问题", icon="🧹")
         st.rerun()  # 强制页面重新运行以刷新text_area显示
 
