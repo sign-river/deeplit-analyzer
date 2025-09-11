@@ -474,48 +474,135 @@ def summarization_tab():
             template_options = {template['name']: template['id'] for template in templates}
             selected_template = st.selectbox("选择总结模板", options=list(template_options.keys()))
             
-            # 获取关键词建议
-            keywords_result = make_api_request(f"/summaries/keywords/{doc_id}")
-            suggested_keywords = keywords_result.get('keywords', []) if keywords_result else []
+            # 获取关键词建议（带加载提示）
+            st.markdown("#### 📝 关键词选择")
             
-            # 关键词选择
-            selected_keywords = st.multiselect(
-                "选择关键词（可选）",
-                options=suggested_keywords,
-                help="选择要重点总结的关键词"
-            )
+            # 使用缓存来避免重复加载
+            cache_key = f"keywords_cache_{doc_id}"
+            if cache_key not in st.session_state:
+                # 显示加载状态
+                with st.spinner("🔍 正在智能分析文档，提取关键词..."):
+                    st.info("💡 AI正在分析文档内容，识别重要的学术术语和概念，请稍候...")
+                    keywords_result = make_api_request(f"/summaries/keywords/{doc_id}")
+                    suggested_keywords = keywords_result.get('keywords', []) if keywords_result else []
+                    # 缓存结果
+                    st.session_state[cache_key] = suggested_keywords
+            else:
+                # 使用缓存的结果
+                suggested_keywords = st.session_state[cache_key]
             
-            if st.button("🚀 生成定制总结", type="primary"):
-                with st.spinner("正在生成定制总结..."):
-                    data = {}
-                    if selected_template:
-                        data['template'] = template_options[selected_template]
-                    if selected_keywords:
-                        data['keywords'] = selected_keywords
+            if suggested_keywords:
+                # 关键词选择
+                selected_keywords = st.multiselect(
+                    "选择关键词（可选）",
+                    options=suggested_keywords,
+                    help="AI已为您提取了文档中的重要学术术语，请选择您感兴趣的关键词"
+                )
+                
+                # 显示提取到的关键词数量
+                st.success(f"✅ 成功提取 {len(suggested_keywords)} 个关键词")
+                
+                # 添加刷新按钮
+                if st.button("🔄 重新提取关键词", help="重新分析文档并提取关键词"):
+                    # 清除缓存并重新加载
+                    if cache_key in st.session_state:
+                        del st.session_state[cache_key]
+                    st.rerun()
                     
-                    result = make_api_request(f"/summaries/custom/{doc_id}", "POST", data=data)
-                    
-                    if result:
-                        st.success("✅ 定制总结生成成功")
-                        
-                        # 显示总结
-                        st.markdown("### 📄 定制总结")
-                        st.markdown(result['summary'])
-                        
-                        # 显示定制信息
-                        if result.get('metadata'):
-                            metadata = result['metadata']
-                            st.markdown("#### 📊 定制信息")
-                            col1, col2 = st.columns(2)
+            else:
+                st.warning("⚠️ 关键词提取失败或未找到合适的关键词")
+                st.info("💡 您仍可以选择总结模板来生成定制总结")
+                selected_keywords = []
+            
+            # 生成按钮和条件检查
+            st.markdown("#### 🚀 生成总结")
+            
+            # 检查是否有选择
+            has_template = selected_template is not None
+            has_keywords = 'selected_keywords' in locals() and selected_keywords
+            
+            # 初始化生成状态
+            if 'custom_summary_generated' not in st.session_state:
+                st.session_state.custom_summary_generated = False
+            if 'custom_summary_result' not in st.session_state:
+                st.session_state.custom_summary_result = None
+                
+            if has_template or has_keywords:
+                generation_info = []
+                if has_template:
+                    generation_info.append(f"📋 模板: {selected_template}")
+                if has_keywords:
+                    generation_info.append(f"🔑 关键词: {len(selected_keywords)}个")
+                
+                st.info("将基于以下设置生成总结:\n" + "\n".join(generation_info))
+                
+                # 只有在没有生成结果时才显示生成按钮
+                if not st.session_state.custom_summary_generated:
+                    if st.button("🚀 生成定制总结", type="primary", key="generate_custom_summary"):
+                        with st.spinner("正在生成定制总结..."):
+                            data = {}
+                            selected_template_name = None
+                            if selected_template:
+                                data['template'] = template_options[selected_template]
+                                selected_template_name = selected_template  # 保存模板名称用于显示
+                            if has_keywords:
+                                data['keywords'] = selected_keywords
                             
-                            with col1:
-                                if metadata.get('template'):
-                                    st.write(f"**模板**: {metadata['template']}")
-                                if metadata.get('keywords'):
-                                    st.write(f"**关键词**: {', '.join(metadata['keywords'])}")
+                            result = make_api_request(f"/summaries/custom/{doc_id}", "POST", data=data)
                             
-                            with col2:
-                                st.write(f"**生成时间**: {metadata.get('generated_at', '未知')}")
+                            if result:
+                                # 保存结果到session state
+                                st.session_state.custom_summary_result = {
+                                    'result': result,
+                                    'template_name': selected_template_name,
+                                    'keywords': selected_keywords if has_keywords else []
+                                }
+                                st.session_state.custom_summary_generated = True
+                                st.rerun()
+                else:
+                    # 显示重新生成按钮
+                    col_a, col_b = st.columns([1, 1])
+                    with col_a:
+                        if st.button("🔄 重新生成", type="secondary", key="regenerate_custom_summary"):
+                            st.session_state.custom_summary_generated = False
+                            st.session_state.custom_summary_result = None
+                            st.rerun()
+                    with col_b:
+                        if st.button("✨ 生成新总结", type="primary", key="new_custom_summary"):
+                            # 清除当前结果，允许重新选择参数
+                            st.session_state.custom_summary_generated = False
+                            st.session_state.custom_summary_result = None
+                            st.rerun()
+            else:
+                st.warning("⚠️ 请至少选择一个总结模板或关键词")
+                st.button("🚀 生成定制总结", type="primary", disabled=True)
+                
+            # 显示生成的结果（如果有）
+            if st.session_state.custom_summary_result:
+                saved_result = st.session_state.custom_summary_result
+                result = saved_result['result']
+                
+                st.success("✅ 定制总结生成成功")
+                
+                # 显示总结
+                st.markdown("### 📄 定制总结")
+                st.markdown(result['summary'])
+                
+                # 显示定制信息
+                st.markdown("#### 📊 定制信息")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if saved_result['template_name']:
+                        st.write(f"**模板**: {saved_result['template_name']}")
+                    if saved_result['keywords']:
+                        st.write(f"**关键词**: {', '.join(saved_result['keywords'])}")
+                
+                with col2:
+                    metadata = result.get('metadata', {})
+                    st.write(f"**生成时间**: {metadata.get('generated_at', '未知')}")
+                    if metadata.get('document_id'):
+                        st.write(f"**文档ID**: {metadata['document_id'][:8]}...")
 
 import streamlit as st
 from hashlib import md5
