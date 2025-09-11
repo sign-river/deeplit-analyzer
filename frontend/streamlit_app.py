@@ -875,7 +875,33 @@ def summarization_tab():
         if templates_result:
             templates = templates_result['templates']
             template_options = {template['name']: template['id'] for template in templates}
-            selected_template = st.selectbox("选择总结模板", options=list(template_options.keys()))
+            
+            # 创建模板选择和预览
+            selected_template = st.selectbox(
+                "选择总结模板", 
+                options=list(template_options.keys()),
+                help="选择合适的学术总结结构模板"
+            )
+            
+            # 显示模板描述和结构预览
+            if selected_template:
+                # 找到对应的模板信息
+                selected_template_info = next((t for t in templates if t['name'] == selected_template), None)
+                if selected_template_info:
+                    st.info(f"📋 {selected_template_info['description']}")
+                    
+                    # 显示模板结构预览
+                    template_structure = {
+                        "问题-方法-结论": "**问题：** [研究要解决的核心问题]\n**方法：** [采用的研究方法和技术]\n**结论：** [主要研究结论和意义]",
+                        "背景-方法-结果": "**背景：** [研究背景和现状]\n**方法：** [研究方法和实验设计]\n**结果：** [主要研究结果和发现]",
+                        "目标-方法-发现": "**目标：** [研究目标和预期成果]\n**方法：** [研究方法和实施路径]\n**发现：** [主要发现和新见解]",
+                        "局限-展望": "**局限：** [研究局限性和不足]\n**展望：** [未来研究方向和应用前景]",
+                        "贡献-影响": "**贡献：** [主要贡献和创新点]\n**影响：** [学术影响和实践意义]"
+                    }
+                    
+                    structure_preview = template_structure.get(selected_template, "自定义结构模板")
+                    with st.expander("📝 查看模板结构预览"):
+                        st.markdown(structure_preview)
             
             # 获取关键词建议（带加载提示）
             st.markdown("#### 📝 关键词选择")

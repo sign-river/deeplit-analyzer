@@ -219,23 +219,38 @@ async def get_custom_summary(
     获取定制化总结
     """
     try:
+        # 添加调试信息
+        print(f"定制总结请求 - document_id: {document_id}")
+        print(f"模板ID: {template}")
+        print(f"关键词: {keywords}")
+        
         # 获取文档
         document = await storage.get_document(document_id)
         if not document:
             raise HTTPException(status_code=404, detail="文档不存在")
         
-        # 生成总结
-        if keywords:
+        # 生成总结 - 支持关键词和模板同时使用
+        if keywords and template:
+            print(f"使用关键词+模板生成总结: 关键词={keywords}, 模板={template}")
+            result = await summarizer.generate_summary_by_keywords_and_template(
+                document=document,
+                keywords=keywords,
+                template=template
+            )
+        elif keywords:
+            print("使用关键词生成总结")
             result = await summarizer.generate_summary_by_keywords(
                 document=document,
                 keywords=keywords
             )
         elif template:
+            print(f"使用模板生成总结: {template}")
             result = await summarizer.generate_summary_by_template(
                 document=document,
                 template=template
             )
         else:
+            print("使用默认定制化总结")
             result = await summarizer.summarize_document(
                 document=document,
                 summary_type="custom"
@@ -258,27 +273,27 @@ async def get_summary_templates():
         {
             "id": "problem_method_conclusion",
             "name": "问题-方法-结论",
-            "description": "按照研究问题、研究方法、研究结论的结构组织总结"
+            "description": "按照【问题】→【方法】→【结论】的结构组织总结，适合研究型论文"
         },
         {
             "id": "background_method_result",
             "name": "背景-方法-结果",
-            "description": "按照研究背景、研究方法、研究结果的结构组织总结"
+            "description": "按照【背景】→【方法】→【结果】的结构组织总结，适合实验性研究"
         },
         {
             "id": "objective_method_finding",
             "name": "目标-方法-发现",
-            "description": "按照研究目标、研究方法、主要发现的结构组织总结"
+            "description": "按照【目标】→【方法】→【发现】的结构组织总结，适合探索性研究"
         },
         {
             "id": "limitation_future",
             "name": "局限-展望",
-            "description": "重点关注研究局限和未来研究方向"
+            "description": "按照【局限】→【展望】的结构组织总结，重点分析研究不足和未来方向"
         },
         {
             "id": "contribution_impact",
             "name": "贡献-影响",
-            "description": "重点关注研究贡献和学术影响"
+            "description": "按照【贡献】→【影响】的结构组织总结，重点突出研究价值和意义"
         }
     ]
     
