@@ -89,6 +89,294 @@ def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = 
         return None
 
 
+def _filter_valuable_sections(sections: List[Dict]) -> List[Dict]:
+    """
+    智能过滤有价值的学术章节
+    """
+    import re
+    
+    # 定义无价值的章节模式
+    invalid_patterns = [
+        # 参考文献相关
+        r'^参考文献',
+        r'^references?$',
+        r'^bibliography',
+        r'^reference list',
+        r'^\d+\.\s*[A-Z]',  # 以数字+大写字母开头的参考文献条目
+        r'^[A-Z][a-z]+,\s*[A-Z]',  # 作者姓名格式
+        
+        # 图表相关
+        r'^图\s*\d+',
+        r'^表\s*\d+',
+        r'^figure\s*\d+',
+        r'^table\s*\d+',
+        r'^附录',
+        r'^appendix',
+        
+        # 页眉页脚和元信息
+        r'^\d+$',  # 纯数字（页码）
+        r'^\d{4}$',  # 年份
+        r'^第\s*\d+\s*页',
+        r'^page\s*\d+',
+        r'^\d+\s*JOURNAL',
+        r'Sep\.\s*\d{4}$',
+        r'^\d{4}\s*年\s*\d+\s*月',
+        
+        # 其他无用信息
+        r'^致谢',
+        r'^acknowledgment',
+        r'^基金',
+        r'^funding',
+        r'^作者简介',
+        r'^author',
+        r'^通讯作者',
+        r'^corresponding author',
+        r'^收稿日期',
+        r'^received',
+        r'^accepted',
+    ]
+    
+    # 定义有价值的章节模式
+    valuable_patterns = [
+        # 中文学术章节
+        r'摘要|abstract',
+        r'引言|导论|绪论|前言',
+        r'文献综述|相关工作|研究现状',
+        r'研究?方法|方法论|实验设计',
+        r'理论.*?基础|理论.*?框架',
+        r'实验|试验|测试',
+        r'结果|实验结果|测试结果',
+        r'分析|数据分析|结果分析',
+        r'讨论|分析.*?讨论',
+        r'结论|总结|小结',
+        r'建议|对策|措施',
+        r'展望|未来.*?工作|后续.*?研究',
+        
+        # 英文学术章节
+        r'introduction',
+        r'literature review',
+        r'related work',
+        r'methodology',
+        r'method',
+        r'approach',
+        r'experiment',
+        r'implementation',
+        r'result',
+        r'finding',
+        r'analysis',
+        r'discussion',
+        r'conclusion',
+        r'summary',
+        r'future work',
+        r'limitation',
+        
+        # 具体研究内容
+        r'.*?设计',
+        r'.*?模型',
+        r'.*?算法',
+        r'.*?系统',
+        r'.*?框架',
+        r'.*?分析',
+        r'.*?研究',
+        r'.*?实现',
+        r'.*?评估',
+        r'.*?验证',
+    ]
+    
+    valuable_sections = []
+    
+    for section in sections:
+        title = section.get('title', '').strip()
+        content = section.get('content', '')
+        
+        if not title or len(title) < 2:
+            continue
+            
+        # 检查是否为无价值章节
+        is_invalid = False
+        for pattern in invalid_patterns:
+            if re.search(pattern, title, re.IGNORECASE):
+                is_invalid = True
+                break
+        
+        if is_invalid:
+            continue
+            
+        # 检查是否为有价值章节
+        is_valuable = False
+        for pattern in valuable_patterns:
+            if re.search(pattern, title, re.IGNORECASE):
+                is_valuable = True
+                break
+        
+        # 额外的价值判断：章节内容长度
+        if not is_valuable and content and len(content) > 200:
+            # 如果内容较长且不是明显的无价值章节，也可能有价值
+            is_valuable = True
+        
+        # 过滤掉过短的章节（可能是标题或片段）
+        if is_valuable and len(title) > 50:
+            # 标题过长，可能是文档解析错误
+            continue
+            
+        if is_valuable:
+            valuable_sections.append(section)
+    
+    # 按章节内容长度排序，内容更丰富的章节排在前面
+    valuable_sections.sort(key=lambda x: len(x.get('content', '')), reverse=True)
+    
+    # 限制返回章节数量，避免选择过多
+    return valuable_sections[:15]
+
+
+def _extract_valuable_sections_with_ai(sections: List[Dict]) -> List[Dict]:
+    """
+    使用AI智能提取和分析有价值的学术章节
+    """
+    if not sections:
+        return []
+    
+    # 首先使用基础规则过滤明显无用的内容
+    filtered_sections = _filter_valuable_sections(sections)
+    
+    if not filtered_sections:
+        return []
+    
+    # 构建章节信息给AI分析
+    sections_info = []
+    for i, section in enumerate(filtered_sections[:20]):  # 限制数量避免API调用过大
+        title = section.get('title', '')
+        content = section.get('content', '')[:300]  # 限制内容长度
+        sections_info.append(f"{i+1}. 标题: {title}\n   内容预览: {content}")
+    
+    sections_text = "\n\n".join(sections_info)
+    
+    # 使用API调用AI分析
+    try:
+        ai_result = make_api_request("/summaries/analyze-sections", "POST", data={
+            "sections_text": sections_text
+        })
+        
+        if ai_result and ai_result.get('valuable_sections'):
+            ai_sections = ai_result['valuable_sections']
+            
+            # 将AI分析结果与原始章节匹配
+            result_sections = []
+            for ai_section in ai_sections:
+                section_index = ai_section.get('index', 0) - 1  # AI返回1-based索引
+                if 0 <= section_index < len(filtered_sections):
+                    original_section = filtered_sections[section_index].copy()
+                    original_section['ai_analysis'] = ai_section.get('analysis', '')
+                    original_section['ai_score'] = ai_section.get('score', 0)
+                    result_sections.append(original_section)
+            
+            # 按AI评分排序
+            result_sections.sort(key=lambda x: x.get('ai_score', 0), reverse=True)
+            return result_sections[:10]  # 返回最多10个最有价值的章节
+            
+    except Exception as e:
+        st.warning(f"AI分析失败，使用基础过滤方法: {str(e)}")
+    
+    # 如果AI分析失败，返回基础过滤结果
+    return filtered_sections[:10]
+
+
+def _extract_main_sections_with_ai(sections: List[Dict]) -> List[Dict]:
+    """
+    使用AI智能识别文档的主要章节，保持原始顺序
+    """
+    import re
+    
+    if not sections:
+        return []
+    
+    # 首先基于标题长度和格式识别可能的主要章节
+    potential_main_sections = []
+    
+    for i, section in enumerate(sections):
+        title = section.get('title', '').strip()
+        content = section.get('content', '')
+        
+        if not title or len(title) < 2:
+            continue
+            
+        # 基础筛选：识别可能的主要章节
+        is_potential_main = False
+        
+        # 1. 标题长度适中（通常主章节标题不会太长）
+        if 5 <= len(title) <= 100:
+            is_potential_main = True
+        
+        # 2. 内容有一定长度
+        if len(content) >= 100:
+            is_potential_main = True
+            
+        # 3. 过滤明显的非主章节内容
+        skip_patterns = [
+            r'^\d+$',  # 纯数字
+            r'^第?\s*\d+\s*页',  # 页码
+            r'参考文献|reference|bibliography',
+            r'附录|appendix',
+            r'致谢|acknowledgment',
+            r'版权|copyright',
+        ]
+        
+        for pattern in skip_patterns:
+            if re.search(pattern, title, re.IGNORECASE):
+                is_potential_main = False
+                break
+        
+        if is_potential_main:
+            section_copy = section.copy()
+            section_copy['original_index'] = i  # 保存原始位置
+            potential_main_sections.append(section_copy)
+    
+    if not potential_main_sections:
+        return sections[:10]  # 如果没有识别出主章节，返回前10个
+    
+    # 如果候选章节太多，使用AI进一步分析
+    if len(potential_main_sections) > 15:
+        # 构建章节信息给AI分析
+        sections_info = []
+        for i, section in enumerate(potential_main_sections[:20]):
+            title = section.get('title', '')
+            content = section.get('content', '')[:200]
+            sections_info.append(f"{i+1}. 标题: {title}\n   内容预览: {content}")
+        
+        sections_text = "\n\n".join(sections_info)
+        
+        # 使用AI分析主要章节
+        try:
+            ai_result = make_api_request("/summaries/analyze-main-sections", "POST", data={
+                "sections_text": sections_text
+            })
+            
+            if ai_result and ai_result.get('main_sections'):
+                ai_sections = ai_result['main_sections']
+                
+                # 将AI分析结果与原始章节匹配，保持顺序
+                result_sections = []
+                for ai_section in ai_sections:
+                    section_index = ai_section.get('index', 0) - 1
+                    if 0 <= section_index < len(potential_main_sections):
+                        original_section = potential_main_sections[section_index].copy()
+                        original_section['ai_analysis'] = ai_section.get('analysis', '')
+                        original_section['is_main_section'] = True
+                        result_sections.append(original_section)
+                
+                # 按原始文档顺序排序
+                result_sections.sort(key=lambda x: x.get('original_index', 0))
+                return result_sections[:12]
+                
+        except Exception as e:
+            st.warning(f"AI分析失败，使用基础识别方法: {str(e)}")
+    
+    # 如果AI分析失败或候选不多，直接返回按原始顺序的主要章节
+    potential_main_sections.sort(key=lambda x: x.get('original_index', 0))
+    return potential_main_sections[:12]
+
+
+
 def load_conversation_list(document_id: str):
     """加载文档的对话列表"""
     try:
@@ -447,19 +735,88 @@ def summarization_tab():
         doc_result = make_api_request(f"/documents/{doc_id}")
         
         if doc_result and doc_result.get('sections'):
-            sections = [section['title'] for section in doc_result['sections']]
-            selected_section = st.selectbox("选择章节", sections)
+            st.markdown("#### 📑 选择章节")
             
-            if st.button("🚀 生成章节总结", type="primary"):
-                with st.spinner("正在生成章节总结..."):
-                    result = make_api_request(f"/summaries/section/{doc_id}", data={"section_name": selected_section})
+            # 使用缓存来避免重复加载
+            sections_cache_key = f"sections_cache_{doc_id}"
+            if sections_cache_key not in st.session_state:
+                # 显示加载状态
+                with st.spinner("🔍 正在AI智能分析文档结构，识别主要章节..."):
+                    # 获取所有章节并智能识别主要章节
+                    all_sections = doc_result['sections']
+                    main_sections = _extract_main_sections_with_ai(all_sections)
                     
-                    if result:
-                        st.success("✅ 章节总结生成成功")
-                        
-                        # 显示总结
-                        st.markdown(f"### 📑 {selected_section} 总结")
-                        st.markdown(result['summary'])
+                    # 缓存结果
+                    st.session_state[sections_cache_key] = main_sections
+            else:
+                # 使用缓存的结果
+                main_sections = st.session_state[sections_cache_key]
+            
+            if main_sections:
+                st.success(f"✅ AI成功识别出 {len(main_sections)} 个主要章节")
+                
+                # 创建章节选项 - 保持原始顺序
+                section_options = {}
+                for i, section in enumerate(main_sections):
+                    title = section['title']
+                    content_preview = section.get('content', '')[:100] + "..." if section.get('content') else ""
+                    ai_analysis = section.get('ai_analysis', '')
+                    display_name = f"第{i+1}章: {title}"
+                    if ai_analysis:
+                        display_name += f" 📋 {ai_analysis[:30]}..."
+                    section_options[display_name] = section
+                    section_options[display_name] = section
+                
+                selected_section_display = st.selectbox(
+                    "选择要总结的章节：",
+                    options=list(section_options.keys()),
+                    help="AI已智能识别出文档中最有学术价值的章节"
+                )
+                
+                # 添加刷新按钮
+                if st.button("🔄 重新分析章节", help="重新使用AI分析文档章节结构"):
+                    if sections_cache_key in st.session_state:
+                        del st.session_state[sections_cache_key]
+                    st.rerun()
+                
+                if selected_section_display:
+                    selected_section = section_options[selected_section_display]
+                    
+                    # 显示章节预览
+                    with st.expander("📖 章节内容预览", expanded=False):
+                        content_preview = selected_section.get('content', '')[:500]
+                        if content_preview:
+                            st.write(f"**章节标题**: {selected_section['title']}")
+                            st.write(f"**内容预览**: {content_preview}...")
+                            
+                            # 显示AI分析结果
+                            if section.get('ai_analysis'):
+                                st.write(f"**AI分析**: {section['ai_analysis']}")
+                        else:
+                            st.warning("该章节内容为空")
+                    
+                    if st.button("🚀 生成章节总结", type="primary"):
+                        with st.spinner("正在生成章节总结..."):
+                            result = make_api_request(f"/summaries/section/{doc_id}", 
+                                                    data={"section_name": selected_section['title']})
+                            
+                            if result:
+                                st.success("✅ 章节总结生成成功")
+                                
+                                # 显示总结
+                                st.markdown(f"### 📑 {selected_section['title']} 总结")
+                                st.markdown(result['summary'])
+            else:
+                st.warning("⚠️ AI未能识别出合适的学术章节")
+                st.info("💡 该文档可能结构不规范或不是标准的学术文献")
+                
+                # 提供降级方案
+                if st.button("🔄 尝试基础章节过滤"):
+                    # 使用原来的基础过滤方法作为降级方案
+                    basic_sections = _filter_valuable_sections(doc_result['sections'])
+                    if basic_sections:
+                        st.session_state[sections_cache_key] = basic_sections
+                        st.rerun()
         else:
             st.warning("该文档没有可用的章节信息")
     

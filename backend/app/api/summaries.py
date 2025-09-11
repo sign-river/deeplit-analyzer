@@ -471,3 +471,238 @@ def _filter_and_rank_keywords(keywords: List[str]) -> List[str]:
     filtered_keywords.sort(key=keyword_score, reverse=True)
     
     return filtered_keywords
+
+
+class SectionAnalysisRequest(BaseModel):
+    """章节分析请求模型"""
+    sections_text: str
+
+
+@router.post("/analyze-sections", response_model=Dict)
+async def analyze_sections(request: SectionAnalysisRequest):
+    """
+    使用AI分析章节的学术价值
+    """
+    try:
+        # 使用AI分析章节
+        ai_result = await _analyze_sections_with_ai(request.sections_text)
+        
+        return {
+            "status": "success",
+            "valuable_sections": ai_result
+        }
+        
+    except Exception as e:
+        import traceback
+        print(f"章节分析错误: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"章节分析失败: {str(e)}")
+
+
+async def _analyze_sections_with_ai(sections_text: str) -> List[Dict]:
+    """
+    使用AI分析章节学术价值
+    """
+    import requests
+    import json
+    from ..core.config import settings
+    
+    # 获取API配置
+    api_key = settings.deepseek_api_key
+    api_url = f"{settings.deepseek_base_url}/chat/completions"
+    
+    if not api_key:
+        raise HTTPException(status_code=500, detail="AI API密钥未配置")
+    
+    # 构建提示词
+    prompt = f"""
+请分析以下学术文档的章节列表，识别出最有学术价值的章节。
+
+章节列表：
+{sections_text}
+
+请按照以下标准评估每个章节的学术价值（1-10分）：
+1. 学术内容的重要性（如研究方法、实验结果、理论分析等）
+2. 内容的完整性和深度
+3. 对理解整体研究的贡献度
+
+请返回JSON格式的分析结果，包含最有价值的章节（评分>=6分），格式如下：
+{{
+  "valuable_sections": [
+    {{
+      "index": 1,
+      "score": 8,
+      "analysis": "该章节包含核心研究方法，对理解研究具有重要价值"
+    }},
+    ...
+  ]
+}}
+
+注意：
+- 只返回评分6分以上的章节
+- 最多返回10个章节
+- 按评分从高到低排序
+- analysis字段请用中文简要说明价值所在
+"""
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    
+    data = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3,
+        "max_tokens": 2000
+    }
+    
+    try:
+        response = requests.post(api_url, headers=headers, json=data, timeout=30)
+        response.raise_for_status()
+        
+        result = response.json()
+        content = result["choices"][0]["message"]["content"]
+        
+        # 解析JSON响应
+        try:
+            # 清理响应内容，移除markdown标记和换行符导致的问题
+            content = content.strip()
+            if content.startswith('```json'):
+                content = content[7:]  # 移除 ```json
+            if content.endswith('```'):
+                content = content[:-3]  # 移除 ```
+            content = content.strip()
+            
+            # 解析JSON
+            ai_analysis = json.loads(content)
+            return ai_analysis.get("valuable_sections", [])
+        except json.JSONDecodeError as e:
+            print(f"解析AI响应JSON失败: {e}, 原始内容: {content}")
+            return []
+            
+    except requests.exceptions.RequestException as e:
+        print(f"AI API请求失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI API请求失败: {str(e)}")
+    except Exception as e:
+        print(f"AI分析处理失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI分析处理失败: {str(e)}")
+
+
+@router.post("/analyze-main-sections", response_model=Dict)
+async def analyze_main_sections(request: SectionAnalysisRequest):
+    """
+    使用AI分析识别文档的主要章节
+    """
+    try:
+        # 使用AI分析主要章节
+        ai_result = await _analyze_main_sections_with_ai(request.sections_text)
+        
+        return {
+            "status": "success",
+            "main_sections": ai_result
+        }
+        
+    except Exception as e:
+        import traceback
+        print(f"主章节分析错误: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"主章节分析失败: {str(e)}")
+
+
+async def _analyze_main_sections_with_ai(sections_text: str) -> List[Dict]:
+    """
+    使用AI分析识别文档主要章节
+    """
+    import requests
+    import json
+    from ..core.config import settings
+    
+    # 获取API配置
+    api_key = settings.deepseek_api_key
+    api_url = f"{settings.deepseek_base_url}/chat/completions"
+    
+    if not api_key:
+        raise HTTPException(status_code=500, detail="AI API密钥未配置")
+    
+    # 构建提示词
+    prompt = f"""
+请分析以下文档章节列表，识别出文档的主要章节（大章节）。
+
+章节列表：
+{sections_text}
+
+请按照以下标准识别主要章节：
+1. 章节内容具有独立性和完整性
+2. 标题能够概括一个完整的主题或部分
+3. 不是子章节、页码、参考文献等辅助内容
+4. 内容长度适中，有实质性内容
+
+请返回JSON格式的分析结果，包含识别出的主要章节，格式如下：
+{{
+  "main_sections": [
+    {{
+      "index": 1,
+      "analysis": "这是文档的引言部分，介绍了研究背景"
+    }},
+    {{
+      "index": 3,
+      "analysis": "这是研究方法章节，详细描述了研究方法"
+    }},
+    ...
+  ]
+}}
+
+注意：
+- 保持章节的原始顺序（按index排序）
+- 最多返回12个主要章节
+- analysis字段简要说明该章节的主要内容
+- 只返回真正的主要章节，过滤掉页码、版权等无关内容
+"""
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    
+    data = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3,
+        "max_tokens": 2000
+    }
+    
+    try:
+        response = requests.post(api_url, headers=headers, json=data, timeout=30)
+        response.raise_for_status()
+        
+        result = response.json()
+        content = result["choices"][0]["message"]["content"]
+        
+        # 解析JSON响应
+        try:
+            # 清理响应内容，移除markdown标记和换行符导致的问题
+            content = content.strip()
+            if content.startswith('```json'):
+                content = content[7:]  # 移除 ```json
+            if content.endswith('```'):
+                content = content[:-3]  # 移除 ```
+            content = content.strip()
+            
+            # 解析JSON
+            ai_analysis = json.loads(content)
+            return ai_analysis.get("main_sections", [])
+        except json.JSONDecodeError as e:
+            print(f"解析AI响应JSON失败: {e}, 原始内容: {content}")
+            return []
+            
+    except requests.exceptions.RequestException as e:
+        print(f"AI API请求失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI API请求失败: {str(e)}")
+    except Exception as e:
+        print(f"AI分析处理失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI分析处理失败: {str(e)}")
