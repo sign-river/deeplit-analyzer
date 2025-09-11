@@ -507,9 +507,6 @@ def document_management_tab():
             help="支持PDF、Word、文本文件"
         )
     
-    with col2:
-        batch_name = st.text_input("批次名称", placeholder="可选")
-    
     # 防重复上传的状态管理
     upload_key = "uploading_files"
     
@@ -535,10 +532,6 @@ def document_management_tab():
                     # 添加所有文件到files列表
                     for file in uploaded_files:
                         files_list.append(('files', (file.name, file, file.type)))
-                    
-                    # 添加批次名称
-                    if batch_name:
-                        data_dict["batch_name"] = batch_name
                     
                     # 使用更直接的方式调用API
                     url = f"{API_BASE_URL}/documents/upload"
@@ -574,35 +567,6 @@ def document_management_tab():
                     del st.session_state[upload_key]
         else:
             st.warning("请先选择要上传的文件")
-    
-    st.markdown("---")
-    
-    # 从URL导入
-    st.markdown("### 🌐 从URL导入")
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        url = st.text_input("文献URL", placeholder="https://example.com/paper.pdf")
-    
-    with col2:
-        filename = st.text_input("文件名", placeholder="可选")
-    
-    if st.button("📥 从URL导入"):
-        if url:
-            with st.spinner("正在从URL导入..."):
-                data = {"url": url}
-                if filename:
-                    data["filename"] = filename
-                
-                result = make_api_request("/documents/upload/url", "POST", data=data)
-                
-                if result:
-                    st.success("✅ 成功从URL导入文档")
-                    doc = result.get("document", {})
-                    st.info(f"📄 {doc.get('filename', '未知')} - ID: {doc.get('id', '未知')}")
-        else:
-            st.warning("请输入有效的URL")
     
     st.markdown("---")
     

@@ -1,7 +1,7 @@
 """
 文档管理API
 """
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query
 from fastapi.responses import JSONResponse
 from typing import List, Optional
 import uuid
@@ -23,8 +23,7 @@ storage = DocumentStorage()
 @router.post("/upload", response_model=dict)
 async def upload_documents(
     background_tasks: BackgroundTasks,
-    files: List[UploadFile] = File(...),
-    batch_name: Optional[str] = Form(None)
+    files: List[UploadFile] = File(...)
 ):
     """
     上传文档文件
@@ -77,8 +76,7 @@ async def upload_documents(
         
         return {
             "message": f"成功上传 {len(files)} 个文件",
-            "documents": uploaded_docs,
-            "batch_name": batch_name
+            "documents": uploaded_docs
         }
         
     except HTTPException:
@@ -88,91 +86,6 @@ async def upload_documents(
         print(f"文档上传错误: {str(e)}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"文档上传失败: {str(e)}")
-    
-    for file in files:
-        # 验证文件类型
-        if not _is_supported_file_type(file.filename):
-            raise HTTPException(
-                400,
-                f"不支持的文件类型: {file.filename}"
-            )
-        
-        # 生成文档ID
-        doc_id = str(uuid.uuid4())
-        
-        # 保存文件
-        file_path = await _save_uploaded_file(file, doc_id)
-        
-        # 创建文档记录
-        document = Document(
-            id=doc_id,
-            filename=file.filename,
-            file_path=file_path,
-            file_size=file.size or 0,
-            document_type=_get_document_type(file.filename),
-            status=DocumentStatus.UPLOADED
-        )
-        
-        # 保存到存储
-        await storage.save_document(document)
-        
-        # 添加到后台处理任务
-        background_tasks.add_task(process_document, doc_id)
-        
-        uploaded_docs.append({
-            "id": doc_id,
-            "filename": file.filename,
-            "status": document.status.value
-        })
-    
-    return {
-        "message": f"成功上传 {len(files)} 个文件",
-        "documents": uploaded_docs,
-        "batch_name": batch_name
-    }
-
-
-@router.post("/upload/url", response_model=dict)
-async def upload_from_url(
-    background_tasks: BackgroundTasks,
-    url: str = Form(...),
-    filename: Optional[str] = Form(None)
-):
-    """
-    从URL导入文档
-    """
-    try:
-        # 下载文件
-        doc_id = str(uuid.uuid4())
-        file_path = await _download_from_url(url, doc_id, filename)
-        
-        # 创建文档记录
-        document = Document(
-            id=doc_id,
-            filename=filename or os.path.basename(url),
-            file_path=file_path,
-            file_size=0,  # 稍后更新
-            document_type=_get_document_type_from_url(url),
-            status=DocumentStatus.UPLOADED
-        )
-        
-        # 保存到存储
-        await storage.save_document(document)
-        
-        # 添加到后台处理任务
-        background_tasks.add_task(process_document, doc_id)
-        
-        return {
-            "message": "成功从URL导入文档",
-            "document": {
-                "id": doc_id,
-                "filename": document.filename,
-                "status": document.status.value
-            }
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"URL导入失败: {str(e)}")
 
 
 @router.get("/", response_model=List[dict])
@@ -324,16 +237,6 @@ def _get_document_type(filename: str) -> DocumentType:
     return type_mapping.get(ext, DocumentType.TEXT)
 
 
-def _get_document_type_from_url(url: str) -> DocumentType:
-    """根据URL获取文档类型"""
-    if url.lower().endswith('.pdf'):
-        return DocumentType.PDF
-    elif url.lower().endswith(('.doc', '.docx')):
-        return DocumentType.WORD
-    else:
-        return DocumentType.HTML
-
-
 async def _save_uploaded_file(file: UploadFile, doc_id: str) -> str:
     """保存上传的文件"""
     file_ext = os.path.splitext(file.filename)[1]
@@ -344,34 +247,3 @@ async def _save_uploaded_file(file: UploadFile, doc_id: str) -> str:
         buffer.write(content)
     
     return file_path
-
-
-async def _download_from_url(url: str, doc_id: str, filename: Optional[str]) -> str:
-    """从URL下载文件"""
-    import aiohttp
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=settings.api_timeout) as response:
-            if response.status != 200:
-                raise Exception(f"下载失败，状态码: {response.status}")
-            
-            content = await response.read()
-            
-            # 确定文件扩展名
-            if filename:
-                file_ext = os.path.splitext(filename)[1]
-            else:
-                content_type = response.headers.get('content-type', '')
-                if 'pdf' in content_type:
-                    file_ext = '.pdf'
-                elif 'html' in content_type:
-                    file_ext = '.html'
-                else:
-                    file_ext = '.txt'
-            
-            file_path = os.path.join(settings.upload_dir, f"{doc_id}{file_ext}")
-            
-            with open(file_path, "wb") as f:
-                f.write(content)
-            
-            return file_path
