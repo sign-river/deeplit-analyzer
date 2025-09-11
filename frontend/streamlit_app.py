@@ -7,6 +7,7 @@ import requests
 import json
 from typing import List, Dict, Optional
 import time
+from hashlib import md5
 
 # 页面配置
 st.set_page_config(
@@ -450,94 +451,174 @@ def summarization_tab():
                             with col2:
                                 st.write(f"**生成时间**: {metadata.get('generated_at', '未知')}")
 
+import streamlit as st
+from hashlib import md5
+
 def qa_tab():
     """智能问答标签页"""
     st.markdown('<h2 class="section-header">💬 智能问答</h2>', unsafe_allow_html=True)
-    
-    # 获取文档列表
+
+    # --- SessionState 初始化 ---
+    if "qa_question" not in st.session_state:
+        st.session_state.qa_question = ""
+    if "qa_selected_doc_id" not in st.session_state:
+        st.session_state.qa_selected_doc_id = None
+    if "qa_suggestion_selected" not in st.session_state:
+        st.session_state.qa_suggestion_selected = None  # 记住上次选择的建议
+
+    # --- 获取文档列表 ---
     result = make_api_request("/documents/")
-    
-    if not result:
-        st.error("❌ 获取文档列表失败")
+    if result is None:
+        st.error("❌ 获取文档列表失败：服务无响应")
         return
-    
-    documents = result
+    documents = result or []
     if not documents:
-        st.info("📭 请先上传文档")
+        st.info("📭 暂无可用文档，请先上传并完成处理")
         return
-    
-    # 选择文档
-    doc_options = {f"{doc['filename']} ({doc['status']})": doc['id'] for doc in documents}
-    selected_doc = st.selectbox("选择文档", options=list(doc_options.keys()), key="qa_doc_select")
-    
-    if not selected_doc:
-        return
-    
-    doc_id = doc_options[selected_doc]
-    
-    # 获取问题建议
-    suggestions_result = make_api_request(f"/qa/suggestions/{doc_id}")
-    
-    if suggestions_result:
-        suggestions = suggestions_result.get('suggestions', [])
-        
-        if suggestions:
-            st.markdown("### 💡 问题建议")
-            selected_suggestion = st.selectbox("选择建议问题", options=["自定义问题"] + suggestions)
-            
-            if selected_suggestion != "自定义问题":
-                st.session_state.qa_question = selected_suggestion
-    
-    # 问题输入
-    st.markdown("### ❓ 提出问题")
-    
-    question = st.text_area(
-        "输入您的问题",
-        value=st.session_state.get('qa_question', ''),
-        height=100,
-        placeholder="例如：这篇文献的主要研究方法是什么？"
+
+    # 用 index + format_func 避免同名覆盖
+    doc_labels = [f"{doc.get('filename','未知文件')}（{doc.get('status','未知状态')}）" for doc in documents]
+
+    # 恢复选中
+    idx_default = 0
+    if st.session_state.qa_selected_doc_id:
+        for i, d in enumerate(documents):
+            if d.get("id") == st.session_state.qa_selected_doc_id:
+                idx_default = i
+                break
+
+    selected_index = st.selectbox(
+        "选择文档",
+        options=list(range(len(documents))),
+        index=idx_default,
+        format_func=lambda i: doc_labels[i],
+        key="qa_doc_selectbox",
     )
-    
-    if st.button("🚀 提问", type="primary"):
-        if question:
-            with st.spinner("正在思考中..."):
-                data = {
-                    "document_id": doc_id,
-                    "question": question
-                }
-                
-                result = make_api_request("/qa/ask", "POST", data=data)
-                
-                if result:
-                    st.success("✅ 回答生成成功")
-                    
-                    # 显示回答
-                    st.markdown("### 🤖 AI回答")
-                    st.markdown(result['answer'])
-                    
-                    # 显示置信度
-                    confidence = result.get('confidence', 0)
-                    confidence_color = "green" if confidence > 0.7 else "orange" if confidence > 0.4 else "red"
-                    st.markdown(f"**置信度**: :{confidence_color}[{confidence:.2f}]")
-                    
-                    # 显示来源
-                    if result.get('sources'):
-                        st.markdown("### 📚 答案来源")
-                        for i, source in enumerate(result['sources']):
-                            with st.expander(f"来源 {i+1} (置信度: {source.get('confidence', 0):.2f})"):
-                                st.write(source.get('source_text', ''))
-                    
-                    # 显示后续建议
-                    if result.get('follow_up_suggestions'):
-                        st.markdown("### 💡 后续建议")
-                        for suggestion in result['follow_up_suggestions']:
-                            if st.button(suggestion, key=f"suggestion_{hash(suggestion)}"):
-                                st.session_state.qa_question = suggestion
-                                st.rerun()
-                else:
-                    st.error("❌ 回答问题失败")
+    selected_doc = documents[selected_index]
+    doc_id = selected_doc.get("id")
+    st.session_state.qa_selected_doc_id = doc_id
+
+    # 文档 Meta（按需显示你后端实际字段）
+    with st.expander("📄 文档信息", expanded=False):
+        cols = st.columns(3)
+        cols[0].metric("状态", selected_doc.get("status", "-"))
+        cols[1].metric("页数", selected_doc.get("pages", "-"))
+        cols[2].metric("最后更新", selected_doc.get("updated_at", "-"))
+        if selected_doc.get("notes"):
+            st.caption(f"备注：{selected_doc['notes']}")
+
+    # --- 获取问题建议（与文档选择同风格：selectbox）---
+    suggestions = []
+    suggestions_result = make_api_request(f"/qa/suggestions/{doc_id}")
+    if suggestions_result:
+        suggestions = suggestions_result.get("suggestions", []) or []
+
+    if suggestions:
+        st.markdown("### 💡 问题建议")
+        # 默认选择：优先用当前文本域内容（若在建议列表里），否则用上次选择，最后回退到第一个
+        if st.session_state.qa_question in suggestions:
+            default_idx = suggestions.index(st.session_state.qa_question)
+        elif st.session_state.qa_suggestion_selected in suggestions:
+            default_idx = suggestions.index(st.session_state.qa_suggestion_selected)
         else:
+            default_idx = 0
+
+        def _apply_suggestion():
+            sel = st.session_state.qa_suggestion_select
+            st.session_state.qa_suggestion_selected = sel
+            st.session_state.qa_question = sel  # 自动填充到文本域
+
+        st.selectbox(
+            "选择一个建议问题：",
+            options=suggestions,
+            index=default_idx,
+            key="qa_suggestion_select",
+            on_change=_apply_suggestion,
+        )
+        st.caption("提示：选择后会自动填入下方输入框。")
+        st.divider()
+
+    # --- 提问（form 保证原子提交）---
+    st.markdown("### ❓ 提出问题")
+    with st.form("qa_ask_form", clear_on_submit=False):
+        question = st.text_area(
+            "输入您的问题",
+            value=st.session_state.qa_question,
+            height=120,
+            placeholder="例如：这篇文献的主要研究方法是什么？",
+            key="qa_question_input",
+        )
+        c1, c2, _ = st.columns([1, 1, 4])
+        submit = c1.form_submit_button("🚀 提问", use_container_width=True)
+        clear = c2.form_submit_button("🧹 清空", use_container_width=True)
+
+    if clear:
+        st.session_state.qa_question = ""
+        st.toast("已清空问题", icon="🧹")
+
+    if submit:
+        if not question.strip():
             st.warning("请输入问题")
+            st.stop()
+
+        with st.spinner("正在思考中..."):
+            payload = {"document_id": doc_id, "question": question.strip()}
+            qa_result = make_api_request("/qa/ask", method="POST", data=payload)
+
+        # 统一错误处理并中断
+        if not qa_result:
+            st.error("❌ 回答问题失败：服务无响应或网络异常")
+            st.stop()
+        if isinstance(qa_result, dict) and qa_result.get("error"):
+            msg = qa_result.get("message") or qa_result.get("detail") or "未知错误"
+            st.error(f"❌ 回答问题失败：{msg}")
+            st.stop()
+
+        # 成功渲染
+        st.success("✅ 回答生成成功")
+        st.session_state.qa_question = question  # 记录当前问题
+
+        st.markdown("### 🤖 AI 回答")
+        st.markdown(qa_result.get("answer", "_（无内容）_"))
+
+        # 置信度
+        try:
+            confidence = float(qa_result.get("confidence", 0.0) or 0.0)
+        except Exception:
+            confidence = 0.0
+        st.markdown("**置信度**")
+        st.progress(min(max(confidence, 0.0), 1.0))
+        st.caption(f":blue[{confidence:.2f}]")
+
+        # 来源
+        sources = qa_result.get("sources") or []
+        if sources:
+            st.markdown("### 📚 答案来源")
+            for i, src in enumerate(sources, start=1):
+                title = (src.get("title") or f"来源 {i}").strip()
+                try:
+                    sconf = float(src.get("confidence", 0.0) or 0.0)
+                except Exception:
+                    sconf = 0.0
+                with st.expander(f"{title}（参考置信度：{sconf:.2f}）", expanded=False):
+                    if src.get("url"):
+                        st.markdown(f"- 🔗 [打开原文]({src['url']})")
+                    if src.get("page"):
+                        st.markdown(f"- 📄 页码：{src['page']}")
+                    if src.get("chunk_id"):
+                        st.markdown(f"- 🧩 片段：{src['chunk_id']}")
+                    st.write((src.get("source_text") or "").strip() or "_（无可显示的片段）_")
+
+        # 后续可追问（改为一行一个按钮，竖排且铺满宽度）
+        followups = qa_result.get("follow_up_suggestions") or []
+        if followups:
+            st.markdown("### 💡 后续可追问")
+            for s in followups:
+                key = "fu_" + md5(s.encode("utf-8")).hexdigest()[:10]
+                if st.button(s, key=key, use_container_width=True):
+                    st.session_state.qa_question = s
+                    st.experimental_rerun()
+
 
 def search_tab():
     """文档检索标签页"""
