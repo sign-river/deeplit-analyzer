@@ -498,16 +498,40 @@ def qa_tab():
     )
     selected_doc = documents[selected_index]
     doc_id = selected_doc.get("id")
+    
+    # 检测文档是否发生变化，如果变化则强制刷新
+    previous_doc_id = st.session_state.get("qa_selected_doc_id")
+    if previous_doc_id != doc_id:
+        st.session_state.qa_selected_doc_id = doc_id
+        # 清空之前的QA结果，避免显示其他文档的结果
+        st.session_state.qa_result = None
+        st.session_state.qa_question = ""
+        st.rerun()
+    
     st.session_state.qa_selected_doc_id = doc_id
+
+    # 获取文档详细信息（实时更新）
+    doc_detail = make_api_request(f"/documents/{doc_id}")
+    if doc_detail:
+        # 合并基本信息和详细信息
+        display_doc = {**selected_doc, **doc_detail}
+    else:
+        # 如果获取详细信息失败，使用基本信息
+        display_doc = selected_doc
 
     # 文档 Meta（按需显示你后端实际字段）
     with st.expander("📄 文档信息", expanded=False):
-        cols = st.columns(3)
-        cols[0].metric("状态", selected_doc.get("status", "-"))
-        cols[1].metric("页数", selected_doc.get("pages", "-"))
-        cols[2].metric("最后更新", selected_doc.get("updated_at", "-"))
-        if selected_doc.get("notes"):
-            st.caption(f"备注：{selected_doc['notes']}")
+        cols = st.columns(2)
+        cols[0].metric("状态", display_doc.get("status", "-"))
+        cols[1].metric("上传时间", display_doc.get("created_at", "-"))
+        
+        # 额外信息
+        if display_doc.get("word_count"):
+            st.info(f"📊 字数统计：{display_doc['word_count']:,} 字")
+        if display_doc.get("filename"):
+            st.caption(f"📁 文件名：{display_doc['filename']}")
+        if display_doc.get("notes"):
+            st.caption(f"📝 备注：{display_doc['notes']}")
 
     # --- 获取问题建议（与文档选择同风格：selectbox）---
     suggestions = []
