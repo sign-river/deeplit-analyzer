@@ -88,6 +88,72 @@ def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = 
         st.error(f"请求处理失败: {str(e)}")
         return None
 
+
+def load_conversation_list(document_id: str):
+    """加载文档的对话列表"""
+    try:
+        result = make_api_request(f"/qa/conversations/{document_id}")
+        if result:
+            return result.get("conversations", [])
+        return []
+    except Exception as e:
+        st.error(f"加载对话列表失败: {str(e)}")
+        return []
+
+
+def load_conversation_detail(conversation_id: str):
+    """加载对话详细内容"""
+    try:
+        result = make_api_request(f"/qa/conversation/{conversation_id}/detail")
+        return result
+    except Exception as e:
+        st.error(f"加载对话详情失败: {str(e)}")
+        return None
+
+
+def export_conversation(conversation_id: str, format_type: str = "json"):
+    """导出对话记录"""
+    try:
+        result = make_api_request(f"/qa/conversation/{conversation_id}/export?format={format_type}")
+        return result
+    except Exception as e:
+        st.error(f"导出对话记录失败: {str(e)}")
+        return None
+
+
+def delete_conversation(conversation_id: str):
+    """删除对话记录"""
+    try:
+        result = make_api_request(f"/qa/conversation/{conversation_id}", method="DELETE")
+        return result is not None
+    except Exception as e:
+        st.error(f"删除对话记录失败: {str(e)}")
+        return False
+
+
+def show_conversation_history_sidebar(document_id: str):
+    """显示对话历史侧边栏 - 已弃用，现在在主页面显示"""
+    pass  # 不再使用此函数，避免重复渲染
+
+
+def show_conversation_detail_modal(conversation_detail):
+    """显示对话详情"""
+    st.markdown(f"## 💬 {conversation_detail['title']}")
+    st.write(f"**文档**: {conversation_detail['document_title']}")
+    st.write(f"**问题总数**: {conversation_detail['total_questions']}")
+    
+    st.markdown("### 对话内容")
+    
+    for i, entry in enumerate(conversation_detail['entries'], 1):
+        with st.expander(f"问题 {i}: {entry['question'][:50]}{'...' if len(entry['question']) > 50 else ''}", expanded=False):
+            st.markdown(f"**时间**: {entry['timestamp'][:19].replace('T', ' ')}")
+            st.markdown(f"**问题**: {entry['question']}")
+            st.markdown(f"**回答**: {entry['answer']}")
+            if entry.get('confidence', 0) > 0:
+                st.markdown(f"**置信度**: {entry['confidence']:.2f}")
+            if entry.get('processing_time', 0) > 0:
+                st.markdown(f"**处理时间**: {entry['processing_time']:.2f}秒")
+
 def main():
     """主函数"""
     # 标题
@@ -215,7 +281,8 @@ def document_management_tab():
     st.markdown("### 📋 文档列表")
     
     if st.button("🔄 刷新列表"):
-        st.rerun()
+        st.toast("列表已刷新", icon="🔄")
+        st.rerun()  # 这个rerun是必要的，但添加了用户友好的提示
     
     # 获取文档列表
     result = make_api_request("/documents/")
@@ -248,7 +315,6 @@ def document_management_tab():
                 if st.button(f"📊 查看详情", key=f"detail_{doc['id']}"):
                     st.session_state['detail_doc_id'] = doc['id']
                     st.session_state['detail_open'] = True
-                    st.rerun()  # 修复：使用新版API
             
             with col3:
                 if st.button(f"🗑️ 删除", key=f"delete_{doc['id']}"):
@@ -467,13 +533,36 @@ def qa_tab():
         st.session_state.qa_suggestion_selected = None  # 记住上次选择的建议
     if "qa_result" not in st.session_state:
         st.session_state.qa_result = None  # 保存最新的QA结果
+    if "current_conversation_id" not in st.session_state:
+        st.session_state.current_conversation_id = None  # 当前对话ID
+    if "conversation_history" not in st.session_state:
+        st.session_state.conversation_history = []  # 对话历史记录
+    if "show_history_sidebar" not in st.session_state:
+        st.session_state.show_history_sidebar = False  # 是否显示历史记录侧边栏
+    if "view_conversation_id" not in st.session_state:
+        st.session_state.view_conversation_id = None  # 要查看详情的对话ID
+    if "last_loaded_doc_id" not in st.session_state:
+        st.session_state.last_loaded_doc_id = None  # 上次加载的文档ID，用于缓存控制
+    if "hide_qa_interface" not in st.session_state:
+        st.session_state.hide_qa_interface = False  # 是否隐藏问答界面
 
-    # --- 获取文档列表 ---
-    result = make_api_request("/documents/")
-    if result is None:
-        st.error("❌ 获取文档列表失败：服务无响应")
-        return
-    documents = result or []
+    # --- 获取文档列表（使用缓存） ---
+    if "documents_cache" not in st.session_state or "documents_cache_time" not in st.session_state:
+        result = make_api_request("/documents/")
+        if result is None:
+            st.error("❌ 获取文档列表失败：服务无响应")
+            return
+        st.session_state.documents_cache = result
+        st.session_state.documents_cache_time = time.time()
+    else:
+        # 如果缓存超过5秒，重新加载
+        if time.time() - st.session_state.documents_cache_time > 5:
+            result = make_api_request("/documents/")
+            if result:
+                st.session_state.documents_cache = result
+                st.session_state.documents_cache_time = time.time()
+    
+    documents = st.session_state.documents_cache or []
     if not documents:
         st.info("📭 暂无可用文档，请先上传并完成处理")
         return
@@ -506,12 +595,31 @@ def qa_tab():
         # 清空之前的QA结果，避免显示其他文档的结果
         st.session_state.qa_result = None
         st.session_state.qa_question = ""
+        # 清空对话状态
+        st.session_state.current_conversation_id = None
+        st.session_state.show_history_sidebar = False
+        st.session_state.view_conversation_id = None  # 清空查看详情状态
+        
+        # 清理所有缓存
+        keys_to_remove = [key for key in st.session_state.keys() if key.startswith(('conversations_', 'conversation_detail_'))]
+        for key in keys_to_remove:
+            del st.session_state[key]
+        
         st.rerun()
     
     st.session_state.qa_selected_doc_id = doc_id
 
-    # 获取文档详细信息（实时更新）
-    doc_detail = make_api_request(f"/documents/{doc_id}")
+    # 获取文档详细信息（使用缓存，实时更新）
+    doc_detail_cache_key = f"doc_detail_{doc_id}"
+    if (doc_detail_cache_key not in st.session_state or 
+        st.session_state.get("last_loaded_doc_id") != doc_id):
+        doc_detail = make_api_request(f"/documents/{doc_id}")
+        if doc_detail:
+            st.session_state[doc_detail_cache_key] = doc_detail
+            st.session_state.last_loaded_doc_id = doc_id
+    else:
+        doc_detail = st.session_state.get(doc_detail_cache_key)
+    
     if doc_detail:
         # 合并基本信息和详细信息
         display_doc = {**selected_doc, **doc_detail}
@@ -533,86 +641,271 @@ def qa_tab():
         if display_doc.get("notes"):
             st.caption(f"📝 备注：{display_doc['notes']}")
 
-    # --- 获取问题建议（与文档选择同风格：selectbox）---
-    suggestions = []
-    suggestions_result = make_api_request(f"/qa/suggestions/{doc_id}")
-    if suggestions_result:
-        suggestions = suggestions_result.get("suggestions", []) or []
-
-    if suggestions:
-        st.markdown("### 💡 问题建议")
+    # 对话管理区域
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        # 显示成功消息
+        if st.session_state.get('conversation_continued'):
+            st.success("✅ 已切换到该对话，可以继续提问")
+            st.session_state['conversation_continued'] = False  # 显示后清除
         
-        # 添加占位选项，避免预选中任何建议问题
-        suggestion_options = ["请选择一个建议问题..."] + suggestions
-        
-        # 默认选择：优先用当前文本域内容（若在建议列表里），否则用上次选择，最后回退到占位项
-        if st.session_state.qa_question in suggestions:
-            default_idx = suggestions.index(st.session_state.qa_question) + 1  # +1 因为有占位项
-        elif st.session_state.qa_suggestion_selected in suggestions:
-            default_idx = suggestions.index(st.session_state.qa_suggestion_selected) + 1
+        if st.session_state.current_conversation_id:
+            st.info(f"💬 当前对话ID: {st.session_state.current_conversation_id[:8]}...")
         else:
-            default_idx = 0  # 选中占位项
+            st.info("💬 新对话（首次提问将创建对话记录）")
+    
+    with col2:
+        if st.button("📖 查看历史", key="show_history"):
+            st.session_state.show_history_sidebar = not st.session_state.show_history_sidebar
+            # 当打开历史记录时，隐藏问题建议和提出问题部分
+            if st.session_state.show_history_sidebar:
+                st.session_state.hide_qa_interface = True
+            else:
+                st.session_state.hide_qa_interface = False
+    
+    with col3:
+        if st.button("🆕 新建对话", key="new_conversation"):
+            st.session_state.current_conversation_id = None
+            st.session_state.qa_result = None
+            st.session_state.qa_question = ""
+            # 关闭历史记录并显示问答界面
+            st.session_state.show_history_sidebar = False
+            st.session_state.hide_qa_interface = False
+            st.toast("已开始新对话", icon="🆕")
+    
+    # 显示对话历史记录
+    if st.session_state.show_history_sidebar:
+        st.markdown("---")
+        st.markdown("### 📚 对话历史记录")
+        
+        # 使用缓存来避免重复加载
+        cache_key = f"conversations_{doc_id}"
+        if cache_key not in st.session_state:
+            st.session_state[cache_key] = load_conversation_list(doc_id)
+        
+        conversations = st.session_state[cache_key]
+        
+        # 添加刷新按钮
+        if st.button("🔄 刷新历史记录", key="refresh_conversations"):
+            st.session_state[cache_key] = load_conversation_list(doc_id)
+            conversations = st.session_state[cache_key]
+        
+        if not conversations:
+            st.info("暂无对话记录")
+        else:
+            # 选择要查看的对话
+            conv_options = {f"{conv['title'][:40]}{'...' if len(conv['title']) > 40 else ''} ({conv['total_questions']}个问题)": conv['id'] 
+                           for conv in conversations}
+            
+            selected_conv_display = st.selectbox(
+                "选择要查看的对话：",
+                options=list(conv_options.keys()),
+                key="selected_conversation"
+            )
+            
+            if selected_conv_display:
+                selected_conv_id = conv_options[selected_conv_display]
+                
+                # 操作按钮
+                col_a, col_b, col_c, col_d = st.columns(4)
+                
+                with col_a:
+                    if st.button("📖 查看详情", key="view_conv_detail"):
+                        detail = load_conversation_detail(selected_conv_id)
+                        if detail:
+                            st.session_state['showing_conv_detail'] = detail
+                            st.session_state['detail_loaded'] = True
+                            st.markdown("""
+                            <script>
+                                window.scrollTo(0, window.scrollY);
+                            </script>
+                            """, unsafe_allow_html=True)
+                            st.rerun()  # 需要立即显示详情，但不滚动
+                
+                with col_b:
+                    if st.button("🔄 继续对话", key="continue_conv"):
+                        st.session_state.current_conversation_id = selected_conv_id
+                        st.session_state.qa_result = None
+                        st.session_state.qa_question = ""
+                        st.session_state['conversation_continued'] = True
+                        st.session_state.qa_clear_counter += 1  # 触发文本框刷新
+                        # 关闭历史记录并显示问答界面
+                        st.session_state.show_history_sidebar = False
+                        st.session_state.hide_qa_interface = False
+                        st.markdown("""
+                        <script>
+                            window.scrollTo(0, window.scrollY);
+                        </script>
+                        """, unsafe_allow_html=True)
+                        st.rerun()  # 需要立即切换对话状态，但不自动滚动
+                
+                with col_c:
+                    if st.button("📥 导出", key="export_conv"):
+                        export_data = export_conversation(selected_conv_id, "markdown")
+                        if export_data:
+                            st.download_button(
+                                label="💾 下载MD文件",
+                                data=export_data['content'],
+                                file_name=export_data['filename'],
+                                mime="text/markdown",
+                                key="download_conv_md"
+                            )
+                
+                with col_d:
+                    # 删除确认机制
+                    delete_confirm_key = f"delete_confirm_{selected_conv_id}"
+                    if delete_confirm_key not in st.session_state:
+                        st.session_state[delete_confirm_key] = False
+                    
+                    if st.session_state[delete_confirm_key]:
+                        if st.button("⚠️ 确认删除", key="confirm_delete_conv", type="primary"):
+                            if delete_conversation(selected_conv_id):
+                                st.success("删除成功")
+                                if st.session_state.current_conversation_id == selected_conv_id:
+                                    st.session_state.current_conversation_id = None
+                                del st.session_state[delete_confirm_key]
+                    else:
+                        if st.button("🗑️ 删除", key="delete_conv", type="secondary"):
+                            st.session_state[delete_confirm_key] = True
+        
+        # 显示对话详情
+        if 'showing_conv_detail' in st.session_state and st.session_state['showing_conv_detail']:
+            st.markdown("---")
+            detail = st.session_state['showing_conv_detail']
+            show_conversation_detail_modal(detail)
+            
+            if st.button("❌ 关闭详情", key="close_detail"):
+                del st.session_state['showing_conv_detail']
+                st.markdown("""
+                <script>
+                    window.scrollTo(0, window.scrollY);
+                </script>
+                """, unsafe_allow_html=True)
+                st.rerun()  # 需要立即隐藏详情窗口，但不自动滚动
+    
+    # 显示对话历史侧边栏
+    if st.session_state.show_history_sidebar:
+        show_conversation_history_sidebar(doc_id)
 
-        def _apply_suggestion():
-            sel = st.session_state.qa_suggestion_select
-            # 如果选择的是占位项，不执行任何操作
-            if sel == "请选择一个建议问题...":
-                return
-            st.session_state.qa_suggestion_selected = sel
-            st.session_state.qa_question = sel  # 自动填充到文本域
+    # --- 文档状态检查 ---
+    doc_status = display_doc.get("status", "").lower()
+    if doc_status not in ["parsed", "extracted", "completed"]:
+        st.warning(f"⚠️ 文档状态为 '{doc_status}'，请等待处理完成后再进行问答")
+        st.info("💡 提示：文档需要处理完成（状态为 parsed/extracted/completed）才能进行智能问答")
+        return
 
-        st.selectbox(
-            "选择一个建议问题：",
-            options=suggestion_options,
-            index=default_idx,
-            key="qa_suggestion_select",
-            on_change=_apply_suggestion,
-        )
-        st.caption("提示：选择后会自动填入下方输入框。")
-        st.divider()
+    # --- 获取问题建议（与文档选择同风格：selectbox）---
+    # 只有在不隐藏问答界面时才显示问题建议
+    if not st.session_state.get('hide_qa_interface', False):
+        suggestions = []
+        suggestions_result = make_api_request(f"/qa/suggestions/{doc_id}")
+        if suggestions_result:
+            suggestions = suggestions_result.get("suggestions", []) or []
 
-    # --- 提问（form 保证原子提交）---
-    st.markdown("### ❓ 提出问题")
-    with st.form("qa_ask_form", clear_on_submit=False):
-        question = st.text_area(
-            "输入您的问题",
-            value=st.session_state.qa_question,
-            height=120,
-            placeholder="例如：这篇文献的主要研究方法是什么？",
-            key="qa_question_input",
-        )
-        c1, c2, _ = st.columns([1, 1, 4])
-        submit = c1.form_submit_button("🚀 提问", use_container_width=True)
-        clear = c2.form_submit_button("🧹 清空", use_container_width=True)
+        if suggestions:
+            st.markdown("### 💡 问题建议")
+            
+            # 添加占位选项，避免预选中任何建议问题
+            suggestion_options = ["请选择一个建议问题..."] + suggestions
+            
+            # 默认选择：优先用当前文本域内容（若在建议列表里），否则用上次选择，最后回退到占位项
+            if st.session_state.qa_question in suggestions:
+                default_idx = suggestions.index(st.session_state.qa_question) + 1  # +1 因为有占位项
+            elif st.session_state.qa_suggestion_selected in suggestions:
+                default_idx = suggestions.index(st.session_state.qa_suggestion_selected) + 1
+            else:
+                default_idx = 0  # 选中占位项
 
-    if clear:
-        st.session_state.qa_question = ""
-        st.session_state.qa_result = None  # 同时清空QA结果
-        st.toast("已清空问题", icon="🧹")
-        st.rerun()  # 强制页面重新运行以刷新text_area显示
+            def _apply_suggestion():
+                sel = st.session_state.qa_suggestion_select
+                # 如果选择的是占位项，不执行任何操作
+                if sel == "请选择一个建议问题...":
+                    return
+                st.session_state.qa_suggestion_selected = sel
+                st.session_state.qa_question = sel  # 自动填充到文本域
+                st.session_state['suggestion_applied'] = True  # 标记已应用建议
+                st.session_state.qa_clear_counter += 1  # 触发文本框刷新
 
-    if submit:
-        if not question.strip():
-            st.warning("请输入问题")
-            st.stop()
+            st.selectbox(
+                "选择一个建议问题：",
+                options=suggestion_options,
+                index=default_idx,
+                key="qa_suggestion_select",
+                on_change=_apply_suggestion,
+            )
+            
+            # 显示应用建议的成功消息
+            if st.session_state.get('suggestion_applied'):
+                st.success("✅ 建议问题已填入输入框")
+                st.session_state['suggestion_applied'] = False  # 显示后清除
+                
+            st.caption("提示：选择后会自动填入下方输入框。")
+            st.divider()
 
-        with st.spinner("正在思考中..."):
-            payload = {"document_id": doc_id, "question": question.strip()}
-            qa_result = make_api_request("/qa/ask", method="POST", data=payload)
+    # 初始化清空计数器
+    if 'qa_clear_counter' not in st.session_state:
+        st.session_state.qa_clear_counter = 0
+    
+    # 只有在不隐藏问答界面时才显示提出问题部分
+    if not st.session_state.get('hide_qa_interface', False):
+        st.markdown("### ❓ 提出问题")
+        with st.form("qa_ask_form", clear_on_submit=False):
+            question = st.text_area(
+                "输入您的问题",
+                value=st.session_state.qa_question,
+                height=120,
+                placeholder="例如：这篇文献的主要研究方法是什么？",
+                key=f"qa_question_input_{st.session_state.qa_clear_counter}",  # 使用计数器强制刷新
+            )
+            c1, c2, _ = st.columns([1, 1, 4])
+            submit = c1.form_submit_button("🚀 提问", use_container_width=True)
+            clear = c2.form_submit_button("🧹 清空", use_container_width=True)
 
-        # 统一错误处理并中断
-        if not qa_result:
-            st.error("❌ 回答问题失败：服务无响应或网络异常")
-            st.stop()
-        if isinstance(qa_result, dict) and qa_result.get("error"):
-            msg = qa_result.get("message") or qa_result.get("detail") or "未知错误"
-            st.error(f"❌ 回答问题失败：{msg}")
-            st.stop()
+        if clear:
+            st.session_state.qa_question = ""
+            st.session_state.qa_result = None  # 同时清空QA结果
+            st.session_state.qa_clear_counter += 1  # 增加计数器强制刷新文本框
+            st.toast("已清空问题", icon="🧹")
+            st.markdown("""
+            <script>
+                window.scrollTo(0, window.scrollY);
+            </script>
+            """, unsafe_allow_html=True)
+            st.rerun()  # 必要：需要立即清空文本框显示
 
-        # 成功渲染
-        st.success("✅ 回答生成成功")
-        st.session_state.qa_question = question  # 记录当前问题
-        st.session_state.qa_result = qa_result  # 保存结果到session_state以便持久显示
+        if submit:
+            if not question.strip():
+                st.warning("请输入问题")
+                st.stop()
+
+            with st.spinner("正在思考中..."):
+                payload = {
+                    "document_id": doc_id, 
+                    "question": question.strip()
+                }
+                # 如果有当前对话ID，则传递以延续对话
+                if st.session_state.current_conversation_id:
+                    payload["conversation_id"] = st.session_state.current_conversation_id
+                
+                qa_result = make_api_request("/qa/ask", method="POST", data=payload)
+
+            # 统一错误处理并中断
+            if not qa_result:
+                st.error("❌ 回答问题失败：服务无响应或网络异常")
+                st.stop()
+            if isinstance(qa_result, dict) and qa_result.get("error"):
+                msg = qa_result.get("message") or qa_result.get("detail") or "未知错误"
+                st.error(f"❌ 回答问题失败：{msg}")
+                st.stop()
+
+            # 成功渲染
+            st.success("✅ 回答生成成功")
+            st.session_state.qa_question = question  # 记录当前问题
+            st.session_state.qa_result = qa_result  # 保存结果到session_state以便持久显示
+            
+            # 保存或更新对话ID
+            if qa_result.get("conversation_id"):
+                st.session_state.current_conversation_id = qa_result["conversation_id"]
 
     # 显示之前的QA结果（如果有的话）
     if 'qa_result' in st.session_state and st.session_state.qa_result:
@@ -669,6 +962,34 @@ def qa_tab():
                     st.session_state.qa_question = s
                     st.toast(f"✅ 已选择追问：{s[:50]}{'...' if len(s) > 50 else ''}", icon="💭")
                     st.rerun()
+
+    # 显示对话详情（如果有选中的对话）
+    if st.session_state.view_conversation_id:
+        st.markdown("---")
+        st.markdown("### 📋 对话详情")
+        
+        # 添加关闭按钮
+        col1, col2 = st.columns([1, 6])
+        with col1:
+            if st.button("❌ 关闭", key="close_conversation_detail"):
+                st.session_state.view_conversation_id = None
+                # 清理缓存
+                detail_cache_key = f"conversation_detail_{st.session_state.view_conversation_id}"
+                if detail_cache_key in st.session_state:
+                    del st.session_state[detail_cache_key]
+                st.rerun()
+        
+        # 使用缓存加载对话详情
+        detail_cache_key = f"conversation_detail_{st.session_state.view_conversation_id}"
+        if detail_cache_key not in st.session_state:
+            st.session_state[detail_cache_key] = load_conversation_detail(st.session_state.view_conversation_id)
+        
+        detail = st.session_state[detail_cache_key]
+        if detail:
+            show_conversation_detail_modal(detail)
+        else:
+            st.error("无法加载对话详情")
+            st.session_state.view_conversation_id = None
 
 
 def search_tab():

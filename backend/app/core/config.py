@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     upload_dir: str = "./data/uploads"
     processed_dir: str = "./data/processed"
     index_dir: str = "./data/index"
+    conversations_dir: str = "./data/conversations"
     
     # OCR配置
     tesseract_cmd: Optional[str] = None

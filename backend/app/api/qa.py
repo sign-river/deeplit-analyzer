@@ -10,6 +10,7 @@ import time
 from ..models.qa import QAResponse, QuestionType
 from ..services.qa.qa_service import QAService
 from ..services.storage.document_storage import DocumentStorage
+from ..services.storage.conversation_storage import conversation_storage
 
 router = APIRouter(prefix="/qa", tags=["qa"])
 
@@ -75,7 +76,7 @@ class QuestionRequest(BaseModel):
     """问题请求模型"""
     document_id: str
     question: str
-    conversation_history: Optional[List[Dict]] = None
+    conversation_id: Optional[str] = None  # 可选的对话ID，用于延续已有对话
 
 
 class QuestionResponse(BaseModel):
@@ -87,12 +88,13 @@ class QuestionResponse(BaseModel):
     reasoning: Optional[str]
     follow_up_suggestions: List[str]
     processing_time: float
+    conversation_id: str  # 返回对话ID
 
 
 @router.post("/ask", response_model=QuestionResponse)
 async def ask_question(request: QuestionRequest):
     """
-    提问接口
+    提问接口（支持持久化对话历史）
     """
     try:
         # 获取文档
@@ -107,10 +109,24 @@ async def ask_question(request: QuestionRequest):
                 detail="文档尚未处理完成，请稍后再试"
             )
         
-        # 获取对话历史（如果前端没传递，则从后端管理器获取）
-        conversation_history = request.conversation_history
-        if conversation_history is None:
-            conversation_history = conversation_manager.get_conversation_history(request.document_id)
+        # 获取或创建对话记录
+        conversation = None
+        if request.conversation_id:
+            # 延续已有对话
+            conversation = await conversation_storage.get_conversation(request.conversation_id)
+            if not conversation:
+                raise HTTPException(status_code=404, detail="对话记录不存在")
+        else:
+            # 创建新对话
+            conversation = await conversation_storage.create_conversation(
+                document_id=request.document_id,
+                document_title=document.metadata.title if document.metadata else "未知文档",
+                first_question=request.question
+            )
+            await conversation_storage.save_conversation(conversation)
+        
+        # 获取对话历史（转换为QA服务需要的格式）
+        conversation_history = conversation.to_history_format()
         
         # 回答问题
         qa_response = await qa_service.answer_question(
@@ -119,7 +135,19 @@ async def ask_question(request: QuestionRequest):
             conversation_history=conversation_history
         )
         
-        # 将当前对话添加到历史记录中
+        # 保存问答到对话记录
+        await conversation_storage.add_qa_to_conversation(
+            conversation_id=conversation.id,
+            question=request.question,
+            answer=qa_response.answer,
+            confidence=qa_response.confidence,
+            sources=[source.dict() for source in qa_response.sources],
+            processing_time=qa_response.processing_time,
+            question_type=qa_response.question_type.value,
+            reasoning=qa_response.reasoning
+        )
+        
+        # 同时保存到内存管理器（向后兼容）
         conversation_manager.add_conversation(
             document_id=request.document_id,
             question=request.question,
@@ -133,13 +161,127 @@ async def ask_question(request: QuestionRequest):
             question_type=qa_response.question_type.value,
             reasoning=qa_response.reasoning,
             follow_up_suggestions=qa_response.follow_up_suggestions,
-            processing_time=qa_response.processing_time
+            processing_time=qa_response.processing_time,
+            conversation_id=conversation.id
         )
         
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"处理问题失败: {str(e)}")
+
+
+@router.get("/conversations/{document_id}")
+async def get_conversations_by_document(document_id: str, skip: int = 0, limit: int = 20):
+    """
+    获取文档的所有对话记录列表
+    """
+    try:
+        # 检查文档是否存在
+        document = await storage.get_document(document_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        
+        conversations = await conversation_storage.list_conversations(
+            document_id=document_id,
+            skip=skip,
+            limit=limit
+        )
+        
+        # 转换为简化格式
+        conversation_list = []
+        for conv in conversations:
+            conversation_list.append({
+                "id": conv.id,
+                "title": conv.title,
+                "total_questions": conv.total_questions,
+                "created_at": conv.created_at.isoformat(),
+                "updated_at": conv.updated_at.isoformat(),
+                "status": conv.status.value
+            })
+        
+        return {
+            "document_id": document_id,
+            "conversations": conversation_list,
+            "total": len(conversation_list)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取对话列表失败: {str(e)}")
+
+
+@router.get("/conversation/{conversation_id}/detail")
+async def get_conversation_detail(conversation_id: str):
+    """
+    获取对话详细内容
+    """
+    try:
+        conversation = await conversation_storage.get_conversation(conversation_id)
+        if not conversation:
+            raise HTTPException(status_code=404, detail="对话记录不存在")
+        
+        return conversation.dict()
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取对话详细内容失败: {str(e)}")
+
+
+@router.delete("/conversation/{conversation_id}")
+async def delete_conversation(conversation_id: str):
+    """
+    删除对话记录
+    """
+    try:
+        success = await conversation_storage.delete_conversation(conversation_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="对话记录不存在")
+        
+        return {"message": "对话记录已删除", "conversation_id": conversation_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"删除对话记录失败: {str(e)}")
+
+
+@router.post("/conversation/{conversation_id}/archive")
+async def archive_conversation(conversation_id: str):
+    """
+    归档对话记录
+    """
+    try:
+        success = await conversation_storage.archive_conversation(conversation_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="对话记录不存在")
+        
+        return {"message": "对话记录已归档", "conversation_id": conversation_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"归档对话记录失败: {str(e)}")
+
+
+@router.get("/conversation/{conversation_id}/export")
+async def export_conversation(conversation_id: str, format: str = Query("json", regex="^(json|markdown)$")):
+    """
+    导出对话记录
+    """
+    try:
+        export_data = await conversation_storage.export_conversation(conversation_id, format)
+        if not export_data:
+            raise HTTPException(status_code=404, detail="对话记录不存在")
+        
+        return export_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"导出对话记录失败: {str(e)}")
 
 
 @router.get("/conversation/{document_id}")
