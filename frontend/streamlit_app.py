@@ -1483,7 +1483,7 @@ def qa_tab():
 
 def search_tab():
     """文档检索标签页"""
-    st.markdown('<h2 class="section-header">🔍 文档检索</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">🔍 智能文档检索</h2>', unsafe_allow_html=True)
     
     # 获取文档列表
     result = make_api_request("/documents/")
@@ -1506,18 +1506,43 @@ def search_tab():
     
     doc_id = doc_options[selected_doc]
     
-    # 搜索查询
-    st.markdown("### 🔍 搜索查询")
+    # 搜索配置
+    st.markdown("### 🔍 搜索配置")
     
-    query = st.text_input("输入搜索关键词", placeholder="例如：研究方法、实验结果、结论")
+    query = st.text_input(
+        "输入搜索关键词", 
+        placeholder="例如：研究方法、实验结果、数据分析、结论",
+        help="支持关键词搜索和自然语言查询"
+    )
     
-    if st.button("🚀 搜索", type="primary"):
+    # 搜索选项
+    with st.expander("🔧 高级选项"):        
+        show_scores = st.checkbox("显示相关性分数", value=True)
+        show_context = st.checkbox("显示章节信息", value=True)
+    
+    if st.button("🚀 开始搜索", type="primary"):
         if query:
-            with st.spinner("正在搜索..."):
-                result = make_api_request(f"/qa/search", data={"document_id": doc_id, "q": query})
+            with st.spinner("正在使用AI分析文档相关性..."):
+                # 设置默认返回结果数量
+                top_k = 12  # 默认返回12个结果
+                
+                # 调用API
+                api_data = {
+                    "document_id": doc_id, 
+                    "q": query,
+                    "top_k": top_k
+                }
+                
+                result = make_api_request("/qa/search", "GET", data=api_data)
                 
                 if result:
                     st.success("✅ 搜索完成")
+                    
+                    # 显示搜索统计
+                    search_method_used = result.get('search_method', 'unknown')
+                    total_results = result.get('total_results', 0)
+                    
+                    st.info(f"🔍 搜索方式: {search_method_used} | 📊 找到 {total_results} 个相关片段")
                     
                     # 显示搜索结果
                     st.markdown("### 📋 搜索结果")
@@ -1525,14 +1550,92 @@ def search_tab():
                     results = result.get('results', [])
                     if results:
                         for i, search_result in enumerate(results):
-                            with st.expander(f"结果 {i+1} (相似度: {search_result.get('score', 0):.3f})"):
-                                st.write(search_result.get('text', ''))
+                            # 构建结果标题
+                            score = search_result.get('score', 0)
+                            ai_score = search_result.get('ai_score')
+                            section_title = search_result.get('section_title', f"片段 {i+1}")
+                            
+                            title_parts = [f"结果 {i+1}: {section_title}"]
+                            
+                            if show_scores:
+                                if ai_score is not None:
+                                    title_parts.append(f"AI相关性: {ai_score:.3f}")
+                                title_parts.append(f"综合分数: {score:.3f}")
+                            
+                            result_title = " | ".join(title_parts)
+                            
+                            with st.expander(result_title):
+                                # 显示文本内容
+                                text_content = search_result.get('text', '')
+                                
+                                # 高亮关键词
+                                highlighted_text = _highlight_keywords(text_content, query)
+                                st.markdown(highlighted_text, unsafe_allow_html=True)
+                                
+                                # 显示详细信息
+                                if show_context or show_scores:
+                                    st.markdown("---")
+                                    
+                                    detail_cols = st.columns(3)
+                                    
+                                    with detail_cols[0]:
+                                        if show_context:
+                                            st.markdown(f"**📖 章节**: {section_title}")
+                                            section_id = search_result.get('section_id', 'unknown')
+                                            st.markdown(f"**🔗 ID**: `{section_id}`")
+                                    
+                                    with detail_cols[1]:
+                                        if show_scores and ai_score is not None:
+                                            st.markdown(f"**🤖 AI评分**: {ai_score:.3f}")
+                                            preliminary_score = search_result.get('preliminary_score', 0)
+                                            st.markdown(f"**📊 初步分数**: {preliminary_score:.1f}")
+                                    
+                                    with detail_cols[2]:
+                                        if show_scores:
+                                            text_length = len(text_content)
+                                            st.markdown(f"**📏 文本长度**: {text_length} 字符")
+                                            start_pos = search_result.get('start_pos', 0)
+                                            st.markdown(f"**📍 位置**: {start_pos}")
                     else:
-                        st.info("未找到相关结果")
+                        st.info("🔍 未找到相关结果，尝试使用不同的关键词或搜索条件")
+                        
+                        # 搜索建议
+                        st.markdown("### 💡 搜索建议")
+                        st.markdown("""
+                        - 尝试使用更具体的关键词
+                        - 使用同义词或相关术语
+                        - 检查拼写是否正确
+                        - 尝试使用更短或更长的查询
+                        """)
                 else:
                     st.error("❌ 搜索失败")
         else:
             st.warning("请输入搜索关键词")
+
+
+def _highlight_keywords(text: str, query: str) -> str:
+    """高亮搜索关键词"""
+    if not query:
+        return text
+    
+    # 简单的关键词提取和高亮
+    import re
+    
+    # 提取查询中的关键词
+    keywords = re.findall(r'\w+', query.lower())
+    keywords = [kw for kw in keywords if len(kw) > 1]
+    
+    highlighted_text = text
+    
+    for keyword in keywords:
+        # 使用正则表达式进行不区分大小写的替换
+        pattern = re.compile(re.escape(keyword), re.IGNORECASE)
+        highlighted_text = pattern.sub(
+            f'<mark style="background-color: yellow; padding: 1px 2px;">{keyword}</mark>',
+            highlighted_text
+        )
+    
+    return highlighted_text
 
 if __name__ == "__main__":
     main()

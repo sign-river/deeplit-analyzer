@@ -9,6 +9,7 @@ import time
 
 from ..models.qa import QAResponse, QuestionType
 from ..services.qa.qa_service import QAService
+from ..services.search.ai_search_service import AISearchService
 from ..services.storage.document_storage import DocumentStorage
 from ..services.storage.conversation_storage import conversation_storage
 
@@ -17,6 +18,7 @@ router = APIRouter(prefix="/qa", tags=["qa"])
 # 初始化服务
 qa_service = QAService()
 storage = DocumentStorage()
+ai_search_service = AISearchService()
 
 # 对话历史管理器（内存存储，生产环境可考虑使用Redis）
 class ConversationManager:
@@ -336,10 +338,11 @@ async def clear_conversation_history(document_id: str):
 @router.get("/search")
 async def search_document(
     document_id: str = Query(..., description="文档ID"),
-    q: str = Query(..., description="搜索关键词")
+    q: str = Query(..., description="搜索关键词"),
+    top_k: int = Query(10, ge=1, le=50, description="返回结果数量")
 ):
     """
-    文档内检索（返回相关片段）
+    智能文档检索（AI驱动的语义搜索）
     """
     try:
         # 获取文档
@@ -354,20 +357,16 @@ async def search_document(
                 detail="文档尚未处理完成，请稍后再试"
             )
         
-        # 使用QA检索逻辑获取相关片段
-        relevant_sections = await qa_service._retrieve_relevant_sections(document, q)
+        # 使用AI增强搜索
+        search_results = await ai_search_service.enhanced_search(document, q, top_k)
         
-        results = []
-        for item in relevant_sections:
-            section = item["section"]
-            results.append({
-                "section_id": section.id,
-                "title": section.title,
-                "text": item["text"],
-                "score": float(item["score"]),
-            })
-        
-        return {"document_id": document_id, "query": q, "results": results}
+        return {
+            "document_id": document_id, 
+            "query": q, 
+            "total_results": len(search_results),
+            "results": search_results,
+            "search_method": "ai_semantic"
+        }
     except HTTPException:
         raise
     except Exception as e:
