@@ -238,15 +238,6 @@ deeplit-analyzer
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 打开 Pull Request
 
-## 👥 贡献者
-
-感谢所有为项目做出贡献的开发者！
-
-<a href="https://github.com/sign-river/deeplit-analyzer/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=sign-river/deeplit-analyzer" />
-</a>
-
-*由 [contrib.rocks](https://contrib.rocks) 生成*
 
 ## 📄 许可证
 
