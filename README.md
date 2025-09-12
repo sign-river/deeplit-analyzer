@@ -2,35 +2,35 @@
 
 ## 📚 项目简介
 
-deeplit-analyzer 是一款专注于学术文献领域的智能处理系统，旨在为科研人员、学生和学术工作者提供高效的文献处理工具。系统通过AI技术自动化完成文献信息的深度加工与智能交互，解决文献阅读耗时久、信息提取效率低、知识整合难、疑问解答不及时等痛点。
+deeplit-analyzer 是一款专注于学术文献领域的智能处理系统，旨在为科研人员、学生和学术工作者提供高效的文献处理工具。系统通过集成 DeepSeek API 实现文献信息的深度加工与智能交互，解决文献阅读耗时久、信息提取效率低、知识整合难、疑问解答不及时等痛点。
 
 ## ✨ 核心功能
 
 ### 🔍 文献导入与解析
-- **多格式支持**: PDF（扫描件+可编辑版）、Word、LaTeX、HTML、文本等
-- **多来源导入**: 本地文件上传、在线链接导入、批量导入
-- **智能解析**: 自动提取元数据、章节结构、图表、参考文献
-- **OCR识别**: 支持扫描版PDF的OCR文字识别
-
-### 🧠 知识点提取
-- **核心观点提取**: 从摘要、讨论、结论章节提取核心论点
-- **研究方法分析**: 识别研究设计类型、关键步骤、参数、工具
-- **实验结果总结**: 提取关键数据、统计学意义、图表关联
-- **局限与展望**: 识别研究不足和未来研究方向
-- **关键词扩展**: 构建层级化关键词树
+- **多格式支持**: PDF、Word文档等主流格式
+- **本地文件上传**: 支持批量文件上传处理
+- **智能解析**: 自动提取文档内容、章节结构、元数据
+- **OCR支持**: 处理扫描版PDF的文字识别
 
 ### 📝 智能总结
-- **全文献概括**: 按"目的→方法→结果→结论"逻辑生成总结
-- **章节聚焦**: 针对特定章节的详细总结
-- **定制化总结**: 支持关键词筛选和结构模板选择
-- **多语言支持**: 中英文文献总结
+- **多种总结模式**: 
+  - 全文献概括：整体内容总结
+  - 章节总结：针对特定章节的详细分析
+  - 定制化总结：基于关键词和模板的个性化总结
+- **结构化模板**: 
+  - 问题-方法-结论
+  - 背景-方法-结果
+  - 目标-方法-发现
+  - 局限-展望
+  - 贡献-影响
+- **关键词提取**: 智能识别文档核心关键词
 
 ### 💬 智能问答
-- **事实类问答**: 基于文献内容的精准回答
-- **逻辑类问答**: 分析因果关系和逻辑推导
-- **深度分析**: 提供研究局限影响和泛化性分析
-- **多轮对话**: 支持上下文关联的连续问答
-- **DeepSeek集成**: 使用DeepSeek API提供高质量回答
+- **基于文档的精准问答**: 针对文档内容的智能回答
+- **多轮对话支持**: 保持上下文的连续问答
+- **对话历史管理**: 完整的对话记录和管理功能
+- **问题建议**: 智能生成相关问题建议
+- **DeepSeek API集成**: 利用先进AI模型提供高质量回答
 
 ## 🚀 快速开始
 
@@ -43,8 +43,8 @@ deeplit-analyzer 是一款专注于学术文献领域的智能处理系统，旨
 
 1. **克隆项目**
 ```bash
-git clone <repository-url>
-cd ScholarMind-AI
+git clone https://github.com/sign-river/deeplit-analyzer.git
+cd deeplit-analyzer
 ```
 
 2. **安装依赖**
@@ -63,13 +63,17 @@ DEEPSEEK_API_KEY=your_deepseek_api_key_here
 
 4. **启动服务**
 
-**启动后端服务**:
+**一键启动（推荐）**:
 ```bash
-python start_backend.py
+python run.py
 ```
 
-**启动前端服务**:
+**分别启动**:
 ```bash
+# 启动后端服务
+python start_backend.py
+
+# 启动前端服务  
 python start_frontend.py
 ```
 
@@ -82,23 +86,23 @@ python start_frontend.py
 
 ### 1. 文档上传
 - 支持拖拽上传多个文件
-- 支持从URL导入文献
 - 自动检测文件格式和完整性
 
 ### 2. 文档处理
 - 系统自动解析文档内容
 - 提取元数据和章节结构
-- 生成知识点和向量索引
+- 生成文档索引
 
 ### 3. 文献总结
 - 选择总结类型（全文献/章节/定制）
 - 选择总结模板或关键词
-- 生成高质量总结
+- 生成高质量结构化总结
 
 ### 4. 智能问答
 - 选择目标文档
 - 输入问题或选择建议问题
 - 获得基于文献的准确回答
+- 支持多轮对话和历史记录
 
 ## 🔧 配置说明
 
@@ -116,6 +120,11 @@ INDEX_DIR=./data/index
 # OCR配置（可选）
 TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
 
+# 应用配置
+APP_NAME=deeplit-analyzer
+APP_VERSION=1.0.0
+DEBUG=True
+
 # 性能配置
 MAX_FILE_SIZE=50MB
 MAX_BATCH_SIZE=100
@@ -126,27 +135,6 @@ MAX_BATCH_SIZE=100
 2. 获取API密钥
 3. 在`.env`文件中配置`DEEPSEEK_API_KEY`
 
-## 📊 性能指标
-
-### 解析准确率
-- 可编辑PDF/Word: ≥98%
-- 扫描件PDF OCR: ≥95%
-- 元数据提取: ≥95%
-- 章节识别: ≥90%
-- 参考文献解析: ≥92%
-
-### 知识点提取
-- 核心观点准确率: ≥90%
-- 实验结果准确率: ≥90%
-- 研究方法准确率: ≥85%
-- 关键词扩展准确率: ≥85%
-- 冗余信息占比: ≤5%
-
-### 响应时间
-- 单篇文献解析: ≤30秒
-- 在线链接导入: ≤10秒
-- 事实类问答: ≤2秒
-- 逻辑/分析类问答: ≤5秒
 
 ## 🏗️ 系统架构
 
@@ -155,43 +143,64 @@ deeplit-analyzer
 ├── backend/                 # 后端服务
 │   ├── app/
 │   │   ├── api/            # API路由
+│   │   │   ├── documents.py    # 文档管理API
+│   │   │   ├── summaries.py    # 总结API  
+│   │   │   └── qa.py          # 问答API
 │   │   ├── core/           # 核心配置
+│   │   │   └── config.py      # 应用配置
 │   │   ├── models/         # 数据模型
+│   │   │   ├── document.py    # 文档模型
+│   │   │   ├── qa.py          # 问答模型
+│   │   │   └── conversation.py # 对话模型
 │   │   └── services/       # 业务服务
 │   │       ├── parser/     # 文档解析
-│   │       ├── extractor/  # 知识点提取
 │   │       ├── summarizer/ # 总结生成
 │   │       ├── qa/         # 智能问答
+│   │       ├── search/     # 搜索服务
 │   │       └── storage/    # 数据存储
 ├── frontend/               # 前端界面
 │   └── streamlit_app.py   # Streamlit应用
 ├── data/                   # 数据目录
 │   ├── uploads/           # 上传文件
 │   ├── processed/         # 处理结果
-│   └── index/             # 向量索引
-└── docs/                  # 文档
+│   ├── conversations/     # 对话记录
+│   └── index/             # 索引文件
+├── run.py                  # 一键启动脚本
+├── start_backend.py        # 后端启动脚本
+├── start_frontend.py       # 前端启动脚本
+├── requirements.txt        # 依赖包列表
+├── env.example            # 环境变量模板
+└── README.md              # 项目说明文档
 ```
 
 ## 🔌 API接口
 
 ### 文档管理
 - `POST /documents/upload` - 上传文档
-- `POST /documents/upload/url` - 从URL导入
 - `GET /documents/` - 获取文档列表
 - `GET /documents/{id}` - 获取文档详情
 - `DELETE /documents/{id}` - 删除文档
+- `POST /documents/{id}/reprocess` - 重新处理文档
 
 ### 文献总结
 - `POST /summaries/generate` - 生成总结
 - `GET /summaries/full/{id}` - 全文献总结
-- `GET /summaries/section/{id}` - 章节总结
+- `POST /summaries/section/{id}` - 章节总结
+- `GET /summaries/section/{id}` - 获取章节总结
 - `POST /summaries/custom/{id}` - 定制总结
+- `GET /summaries/templates` - 获取总结模板
+- `GET /summaries/keywords/{id}` - 获取关键词
 
 ### 智能问答
 - `POST /qa/ask` - 提问
 - `GET /qa/suggestions/{id}` - 获取问题建议
 - `POST /qa/conversation/{id}` - 开始对话
 - `POST /qa/conversation/{id}/continue` - 继续对话
+- `GET /qa/conversations/{document_id}` - 获取对话列表
+- `GET /qa/conversation/{conversation_id}/detail` - 获取对话详情
+- `DELETE /qa/conversation/{conversation_id}` - 删除对话
+- `POST /qa/conversation/{conversation_id}/archive` - 归档对话
+- `GET /qa/conversation/{conversation_id}/export` - 导出对话
 
 ## 🛠️ 开发指南
 
@@ -200,25 +209,26 @@ deeplit-analyzer
 2. 实现`parse_document`方法
 3. 在`DocumentParser`中注册新格式
 
-### 扩展知识点提取规则
-1. 在`backend/app/services/extractor/`中修改提取逻辑
-2. 添加学科特定的提取规则
-3. 更新置信度计算算法
-
-### 自定义总结模板
+### 扩展总结模板
 1. 在`SummarizerService`中添加新模板
 2. 定义模板结构和提示词
 3. 在前端界面中添加模板选项
 
+### 自定义问答逻辑
+1. 在`QAService`中修改问答逻辑
+2. 调整问题分析和回答生成
+3. 优化上下文检索算法
+
 ## 📝 更新日志
 
-### v1.0.0 (2024-01-01)
+### v1.0.0 (2025-09-12)
 - ✨ 初始版本发布
-- 🔍 支持多格式文档解析
-- 🧠 实现知识点提取
-- 📝 提供智能总结功能
-- 💬 集成DeepSeek API问答
+- 🔍 支持PDF、Word文档解析
+- 📝 实现多模板智能总结功能
+- 💬 集成DeepSeek API智能问答
 - 🎨 构建Streamlit前端界面
+- 📋 支持对话历史管理
+- 🔄 优化依赖包配置
 
 ## 🤝 贡献指南
 
@@ -228,15 +238,27 @@ deeplit-analyzer
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 打开 Pull Request
 
+## 👥 贡献者
+
+感谢所有为项目做出贡献的开发者！
+
+<a href="https://github.com/sign-river/deeplit-analyzer/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=sign-river/deeplit-analyzer" />
+</a>
+
+*由 [contrib.rocks](https://contrib.rocks) 生成*
+
 ## 📄 许可证
 
 本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
 
 ## 📞 联系我们
 
-- 项目主页: [GitHub Repository]
-- 问题反馈: [GitHub Issues]
-- 邮箱: [your-email@example.com]
+- 项目主页: [GitHub - deeplit-analyzer](https://github.com/sign-river/deeplit-analyzer)
+- 问题反馈: [GitHub Issues](https://github.com/sign-river/deeplit-analyzer/issues)
+- 邮箱: 
+  - 3217344726@qq.com
+  - 2584628465@qq.com
 
 ## 🙏 致谢
 
